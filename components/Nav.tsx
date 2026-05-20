@@ -2,31 +2,29 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-const PAGES: { href: string; label: string; icon: string }[] = [
-  { href: "/overview",  label: "Overview",  icon: "🏠" },
-  { href: "/trade",     label: "Trade",     icon: "💹" },
-  { href: "/watchlist", label: "Watchlist", icon: "👁" },
-  { href: "/charts",    label: "Charts",    icon: "📈" },
-  { href: "/news",      label: "News",      icon: "📰" },
-  { href: "/settings",  label: "Settings",  icon: "⚙️" },
+const PAGES = [
+  { href: "/overview",  label: "Overview"  },
+  { href: "/trade",     label: "Trade"     },
+  { href: "/watchlist", label: "Watchlist" },
+  { href: "/charts",    label: "Charts"    },
+  { href: "/news",      label: "News"      },
+  { href: "/settings",  label: "Settings"  },
 ];
 
 export default function Nav() {
   const path = usePathname();
   return (
-    <nav className="grid grid-cols-3 sm:grid-cols-6 gap-2 mb-6">
+    <nav className="flex items-center gap-1 mb-7 border-b border-border1 -mt-2">
       {PAGES.map(p => {
         const on = path?.startsWith(p.href);
         return (
           <Link key={p.href} href={p.href}
             className={[
-              "text-[11px] font-bold tracking-[.14em] uppercase rounded-full py-2.5",
-              "text-center transition-all border backdrop-blur-sm",
-              on
-                ? "bg-mint/10 text-mint border-mint shadow-glow"
-                : "bg-card/60 text-muted border-border1 hover:text-mint hover:border-mint hover:bg-mint/5",
+              "px-4 py-3 text-[13px] font-semibold relative transition-colors",
+              on ? "text-ink" : "text-muted hover:text-ink2",
             ].join(" ")}>
-            {p.icon} {p.label}
+            {p.label}
+            {on && <span className="absolute bottom-0 left-3 right-3 h-0.5 bg-mint rounded-full" />}
           </Link>
         );
       })}

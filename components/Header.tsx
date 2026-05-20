@@ -7,11 +7,9 @@ type Me = { name: string; cash: number } | null;
 
 export default function Header() {
   const router = useRouter();
-  const [me, setMe]       = useState<Me>(null);
+  const [me, setMe] = useState<Me>(null);
   const [notifs, setNotifs] = useState(0);
-  const [now, setNow]     = useState("");
 
-  // Initial /me fetch
   useEffect(() => {
     fetch("/api/auth/me").then(r => r.json()).then(j => {
       if (j.user) setMe({ name: j.user.name, cash: Number(j.user.cash || 0) });
@@ -19,18 +17,6 @@ export default function Header() {
     });
   }, [router]);
 
-  // Time
-  useEffect(() => {
-    const t = setInterval(() => {
-      setNow(new Date().toLocaleString(undefined, {
-        weekday: "short", month: "short", day: "numeric",
-        hour: "numeric", minute: "2-digit", hour12: true,
-      }));
-    }, 1000);
-    return () => clearInterval(t);
-  }, []);
-
-  // Poll undelivered notifications -> toast + browser push
   useEffect(() => {
     let cancelled = false;
     async function tick() {
@@ -38,8 +24,7 @@ export default function Header() {
       if (!r || !r.ok || cancelled) return;
       const j = await r.json();
       setNotifs(j.recent?.length || 0);
-      const newOnes = j.undelivered || [];
-      for (const n of newOnes) {
+      for (const n of (j.undelivered || [])) {
         showBrowserPush(n.title, n.body);
         showToast(n.title, n.body);
       }
@@ -49,12 +34,10 @@ export default function Header() {
     return () => { cancelled = true; clearInterval(id); };
   }, []);
 
-  // Ask browser permission once
   useEffect(() => {
     if (typeof window !== "undefined" && "Notification" in window
-        && Notification.permission === "default") {
+        && Notification.permission === "default")
       Notification.requestPermission().catch(() => {});
-    }
   }, []);
 
   async function signOut() {
@@ -63,31 +46,24 @@ export default function Header() {
   }
 
   if (!me) return null;
-
   return (
-    <header className="flex flex-wrap items-center justify-between gap-3 pb-5 mb-6 border-b border-border1 relative">
-      <div className="absolute -bottom-px left-0 w-32 h-px bg-gradient-to-r from-mint to-transparent" />
-      <div className="font-extrabold tracking-[.24em] uppercase text-base sm:text-lg"
-           style={{ background: "linear-gradient(135deg,#3ff5a0,#22c46e)",
-                    WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent",
-                    filter: "drop-shadow(0 0 18px rgba(63,245,160,.45))" }}>
-        VIVAAN.IO
+    <header className="flex items-center justify-between py-4 mb-6 border-b border-border1">
+      <div className="flex items-center gap-2.5">
+        <div className="w-7 h-7 rounded-md bg-mint/15 border border-mint/30 flex items-center justify-center">
+          <span className="text-mint text-[15px] font-bold leading-none">V</span>
+        </div>
+        <div>
+          <div className="text-[13px] font-bold text-ink tracking-tight leading-none">Vivaan</div>
+          <div className="text-[10px] text-muted leading-none mt-0.5">Portfolio Agent</div>
+        </div>
       </div>
-      <div className="flex items-center gap-2 flex-wrap">
-        <span className="pill bg-mint/8 text-mint border border-mint/20 font-mono">
-          <span className="animate-blink">●</span> {fp(me.cash)}
-        </span>
-        {notifs > 0 && (
-          <span className="pill bg-mint/10 text-mint border border-mint/30 animate-pulse-glow">
-            🔔 {notifs}
-          </span>
-        )}
-        <span className="pill bg-mint/8 text-ink border border-mint/20 font-semibold">
-          👤 {me.name}
-        </span>
-        <span className="text-[11px] font-mono text-muted hidden sm:inline">{now}</span>
-        <button onClick={signOut} className="text-[10px] font-bold tracking-wider uppercase text-muted hover:text-red px-2">
-          Sign Out
+      <div className="flex items-center gap-2">
+        <span className="pill-muted font-mono">{fp(me.cash)}</span>
+        {notifs > 0 && <span className="pill-mint">🔔 {notifs}</span>}
+        <span className="pill-muted">{me.name}</span>
+        <button onClick={signOut}
+                className="text-[12px] text-muted hover:text-red transition-colors ml-1">
+          Sign out
         </button>
       </div>
     </header>
@@ -95,8 +71,8 @@ export default function Header() {
 }
 
 function showBrowserPush(title: string, body: string) {
-  if (typeof window === "undefined") return;
-  if (!("Notification" in window) || Notification.permission !== "granted") return;
+  if (typeof window === "undefined" || !("Notification" in window)) return;
+  if (Notification.permission !== "granted") return;
   try { new Notification(title, { body, icon: "/favicon.ico" }); } catch {}
 }
 
@@ -104,16 +80,14 @@ function showToast(title: string, body: string) {
   if (typeof window === "undefined") return;
   const el = document.createElement("div");
   el.className =
-    "fixed top-6 right-6 z-50 max-w-sm bg-card border border-mint/30 rounded-xl p-4 shadow-glow";
-  el.style.animation = "slideIn 0.3s ease-out";
+    "fixed top-6 right-6 z-50 max-w-sm bg-card border border-border2 rounded-lg p-4";
+  el.style.cssText += "animation:slideIn .25s ease-out;box-shadow:0 8px 24px -8px rgba(0,0,0,.5)";
   el.innerHTML =
-    `<div class="text-sm font-bold text-ink mb-1">${escape(title)}</div>` +
-    `<div class="text-xs text-ink2">${escape(body)}</div>`;
+    `<div class="text-sm font-semibold text-ink mb-1">${esc(title)}</div>` +
+    `<div class="text-xs text-ink2">${esc(body)}</div>`;
   document.body.appendChild(el);
   setTimeout(() => el.remove(), 6000);
 }
-
-function escape(s: string) {
-  return s.replace(/[&<>"']/g, c =>
-    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" } as any)[c]);
+function esc(s: string) {
+  return s.replace(/[&<>"']/g, c => (({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"} as any)[c]));
 }

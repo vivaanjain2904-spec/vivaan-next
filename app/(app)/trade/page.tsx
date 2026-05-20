@@ -38,14 +38,11 @@ export default function TradePage() {
 
   return (
     <>
-      <div className="flex gap-1 mb-6 bg-card/60 border border-border1 rounded-full p-1 max-w-md">
+      <div className="seg mb-6">
         {(["buy","sell","history"] as const).map(t => (
           <button key={t} onClick={() => setTab(t)}
-            className={[
-              "flex-1 py-2 text-[11px] font-bold tracking-[.14em] uppercase rounded-full transition-all",
-              tab === t ? "bg-mint/15 text-mint shadow-glow" : "text-muted hover:text-ink",
-            ].join(" ")}>
-            {t === "buy" ? "🛒 Browse & Buy" : t === "sell" ? "📤 Sell / Manage" : "📋 History"}
+                  className={tab === t ? "seg-btn-active" : "seg-btn"}>
+            {t === "buy" ? "Browse & Buy" : t === "sell" ? "Sell / Manage" : "History"}
           </button>
         ))}
       </div>
@@ -60,7 +57,7 @@ export default function TradePage() {
 
       {tab === "buy" && (
         <>
-          <div className="section-h">Find a Stock</div>
+          <label className="label">Search ticker</label>
           <StockSearch value={ticker} onChange={setTicker} />
 
           {quote && (
@@ -169,16 +166,19 @@ function QuoteCard({ q, positions, cash, onTrade, onMsg }: {
 
   return (
     <>
-      <div className="panel-glow mb-5">
-        <div className="text-xs text-muted mb-2 tracking-wider">{q.name}</div>
-        <div className="flex items-baseline gap-3 flex-wrap">
-          <span className="text-4xl font-extrabold tracking-tight"
-                style={{ textShadow: "0 0 28px rgba(63,245,160,.2)" }}>{fp(q.price)}</span>
-          <span className={`font-mono font-bold ${clr(q.pct)}`}>{fpp(q.pct)} today</span>
-        </div>
-        <div className="text-xs text-muted font-mono mt-3 tracking-wider">
-          52W &nbsp;{fp(q.lo52)} – {fp(q.hi52)}
-          {inPort && <span className="ml-3 text-mint font-bold">✓ In Portfolio</span>}
+      <div className="panel mb-5">
+        <div className="flex items-baseline gap-4 flex-wrap">
+          <div>
+            <div className="text-xs text-muted mb-1">{q.name}</div>
+            <div className="flex items-baseline gap-3">
+              <span className="text-3xl font-bold tracking-tight text-ink">{fp(q.price)}</span>
+              <span className={`font-mono text-sm font-semibold ${clr(q.pct)}`}>{fpp(q.pct)}</span>
+            </div>
+          </div>
+          <div className="ml-auto text-[11px] text-muted font-mono">
+            52W &nbsp;{fp(q.lo52)} – {fp(q.hi52)}
+            {inPort && <span className="ml-3 pill-mint">✓ In Portfolio</span>}
+          </div>
         </div>
       </div>
 

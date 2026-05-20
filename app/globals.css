@@ -1,71 +1,90 @@
-@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700;800&family=DM+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 @layer base {
-  html, body { background: #000402; color: #f0f6f1; font-family: 'Space Grotesk', sans-serif; }
-  body {
-    background: radial-gradient(ellipse at top, #0a1810 0%, #000402 50%) fixed;
-    min-height: 100vh;
+  html, body {
+    background: #0a0a0b;
+    color: #fafafa;
+    font-family: 'Inter', system-ui, sans-serif;
+    font-feature-settings: 'cv02','cv03','cv04','cv11';
+    -webkit-font-smoothing: antialiased;
   }
-  ::-webkit-scrollbar { width: 4px; height: 4px; }
-  ::-webkit-scrollbar-thumb { background: #243a26; border-radius: 2px; }
+  body { min-height: 100vh; }
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-thumb { background: #3a3a3f; border-radius: 3px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::selection { background: rgba(52,211,153,.25); }
 }
 
 @layer components {
   .panel {
-    @apply bg-card border border-border1 rounded-2xl p-5 backdrop-blur-sm relative overflow-hidden;
+    @apply bg-card border border-border1 rounded-xl p-5;
   }
-  .panel-glow {
-    @apply panel;
-    background: linear-gradient(155deg, rgba(11,19,14,.95), rgba(16,26,18,.95));
-    box-shadow: 0 8px 32px -12px rgba(63,245,160,0.15);
+  .panel-hover {
+    @apply panel transition-colors hover:border-border2;
   }
+
+  /* Section header — minimal, no overdesign */
   .section-h {
-    @apply text-[11px] font-extrabold tracking-[.22em] uppercase text-ink2
-      pb-2.5 mb-3 border-b border-border1 flex items-center gap-2 relative;
+    @apply text-[12px] font-semibold text-ink2 mb-3 tracking-tight
+      flex items-center justify-between;
   }
-  .section-h::before {
-    content: '';
-    @apply inline-block w-1 h-3 rounded-sm;
-    background: linear-gradient(180deg, #3ff5a0, #22c46e);
-    box-shadow: 0 0 10px rgba(63,245,160,.4);
+  .section-h-lg {
+    @apply text-[15px] font-semibold text-ink mb-4 tracking-tight;
   }
-  .section-h::after {
-    content: '';
-    @apply absolute -bottom-px left-0 w-16 h-px;
-    background: linear-gradient(90deg, #3ff5a0, transparent);
-  }
+
+  /* Ticker tag — clean, no glow */
   .tk-tag {
-    @apply inline-block px-2 py-0.5 rounded-md text-[12px] font-extrabold tracking-wider text-mint;
-    background: linear-gradient(135deg, rgba(63,245,160,.12), rgba(34,196,110,.06));
-    border: 1px solid rgba(63,245,160,.25);
+    @apply inline-block px-2 py-0.5 rounded text-[12px] font-bold tracking-wide
+      bg-card2 text-ink border border-border1;
   }
+
+  /* Buttons — Robinhood-style */
   .btn {
-    @apply inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-full text-[12px]
-      font-bold tracking-[.14em] uppercase transition-all border;
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg
+      text-[13px] font-semibold transition-colors;
   }
-  .btn-mint {
-    @apply btn bg-mint text-bg border-mint hover:shadow-glow;
-  }
-  .btn-ghost {
-    @apply btn bg-card2 text-muted border-border1 hover:text-mint hover:border-mint;
-  }
-  .btn-red {
-    @apply btn bg-transparent text-red border-red/40 hover:bg-red/10;
-  }
+  .btn-mint  { @apply btn bg-mint text-bg hover:bg-mintd; }
+  .btn-red   { @apply btn bg-redd/15 text-red border border-redd/30 hover:bg-redd/25; }
+  .btn-ghost { @apply btn bg-card2 text-ink2 border border-border1 hover:text-ink hover:border-border2; }
+
   .input {
-    @apply w-full bg-card border border-border1 rounded-lg px-3 py-2.5 text-sm text-ink
-      placeholder:text-muted focus:outline-none focus:border-mint focus:ring-1 focus:ring-mint/30;
+    @apply w-full bg-card2 border border-border1 rounded-lg px-3 py-2.5 text-sm text-ink
+      placeholder:text-muted focus:outline-none focus:border-mint/60
+      focus:ring-2 focus:ring-mint/15 transition-all;
   }
   .label {
-    @apply block text-[11px] font-bold tracking-[.14em] uppercase text-muted mb-1.5;
+    @apply block text-[11px] font-semibold text-muted mb-1.5;
   }
+
+  /* Pills */
   .pill {
-    @apply inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[12px] font-bold;
+    @apply inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-semibold;
   }
-  .pill-buy  { @apply pill bg-mint/12 text-mint border border-mint/25; }
-  .pill-sell { @apply pill bg-red/12  text-red  border border-red/25;  }
-  .pill-hold { @apply pill bg-card2   text-muted border border-border1; }
+  .pill-mint { @apply pill bg-mint/10 text-mint; }
+  .pill-red  { @apply pill bg-redd/10 text-red; }
+  .pill-muted{ @apply pill bg-card2 text-ink2 border border-border1; }
+
+  /* Sparkline container */
+  .spark { display: inline-block; vertical-align: middle; }
+
+  /* Tabs (segmented control) */
+  .seg {
+    @apply inline-flex items-center bg-card2 border border-border1 rounded-lg p-1 gap-0.5;
+  }
+  .seg-btn {
+    @apply px-3 py-1.5 text-[12px] font-semibold text-muted rounded-md
+      transition-colors hover:text-ink;
+  }
+  .seg-btn-active {
+    @apply seg-btn bg-bg2 text-ink shadow-sm;
+  }
+}
+
+/* Tiny toast slide-in */
+@keyframes slideIn {
+  from { transform: translateX(20px); opacity: 0; }
+  to   { transform: translateX(0); opacity: 1; }
 }

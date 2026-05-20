@@ -9,7 +9,7 @@
     "db:init": "tsx scripts/init-db.ts"
   },
   "dependencies": {
-    "@vercel/postgres": "^0.10.0",
+    "@neondatabase/serverless": "^0.10.4",
     "bcryptjs": "^2.4.3",
     "jose": "^5.9.6",
     "lightweight-charts": "^4.2.1",

@@ -1,8 +1,16 @@
-import { sql } from "@vercel/postgres";
+import { neon } from "@neondatabase/serverless";
 
-export { sql };
+const URL = process.env.POSTGRES_URL || process.env.DATABASE_URL || "";
+if (!URL) console.warn("⚠ POSTGRES_URL not set");
 
-/** Run once (called from scripts/init-db.ts or first cron tick). */
+// Tagged-template SQL helper. Usage: await sql`SELECT ... ${value}`
+const _sql = neon(URL);
+export const sql = async (strings: TemplateStringsArray, ...values: any[]) => {
+  const rows = await _sql(strings as any, ...values);
+  return { rows: rows as any[] };
+};
+
+/** Run once (auto-called on first register/login/cron tick). */
 export async function initDb() {
   await sql`CREATE TABLE IF NOT EXISTS users (
     id            SERIAL PRIMARY KEY,
