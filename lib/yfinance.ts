@@ -1,135 +1,124 @@
-import yahooFinance from "yahoo-finance2";
+/**
+ * Yahoo Finance via direct HTTP — no yahoo-finance2 schema-validation pain.
+ * The v8/chart endpoint gives us quote + OHLCV in one call without needing a crumb.
+ */
 
-try { (yahooFinance as any).suppressNotices?.(["yahooSurvey", "ripHistorical"]); } catch {}
+const UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36";
+
+async function _yfetch<T = any>(url: string): Promise<T> {
+  const r = await fetch(url, {
+    headers: { "User-Agent": UA, "Accept": "application/json" },
+    cache: "no-store",
+  });
+  if (!r.ok) throw new Error(`yf ${r.status} ${url.slice(0, 80)}`);
+  return r.json() as Promise<T>;
+}
 
 export type Quote = {
   ticker: string; price: number; pct: number;
   hi52: number; lo52: number; name: string;
   open?: number; high?: number; low?: number;
-  vol?: number; avgVol?: number; mcap?: number;
-  pe?: number; eps?: number; beta?: number;
-};
-
-const _quoteFromRaw = (q: any, tkFallback?: string): Quote => {
-  const tk = q.symbol ?? tkFallback ?? "";
-  const p = q.regularMarketPrice ?? 0;
-  const prev = q.regularMarketPreviousClose ?? p;
-  return {
-    ticker: tk, price: p,
-    pct: prev ? ((p - prev) / prev) * 100 : 0,
-    hi52: q.fiftyTwoWeekHigh ?? 0,
-    lo52: q.fiftyTwoWeekLow ?? 0,
-    name: q.longName ?? q.shortName ?? tk,
-    open: q.regularMarketOpen,
-    high: q.regularMarketDayHigh,
-    low:  q.regularMarketDayLow,
-    vol:  q.regularMarketVolume,
-    avgVol: q.averageDailyVolume3Month,
-    mcap: q.marketCap,
-    pe: q.trailingPE, eps: q.epsTrailingTwelveMonths,
-    beta: q.beta,
-  };
+  vol?: number; mcap?: number;
 };
 
 export async function getQuote(ticker: string): Promise<Quote | null> {
+  const tk = ticker.toUpperCase();
   try {
-    const q = await yahooFinance.quote(ticker);
-    return _quoteFromRaw(q, ticker);
-  } catch { return null; }
+    const j: any = await _yfetch(
+      `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(tk)}?interval=1d&range=5d`,
+    );
+    const r = j?.chart?.result?.[0];
+    if (!r) return null;
+    const m = r.meta ?? {};
+    const closes: (number | null)[] = r.indicators?.quote?.[0]?.close ?? [];
+    const valid = closes.filter(c => c != null) as number[];
+    const price = m.regularMarketPrice ?? valid[valid.length - 1] ?? 0;
+    const prev  = m.chartPreviousClose ?? m.previousClose ?? valid[valid.length - 2] ?? price;
+    return {
+      ticker: tk,
+      price,
+      pct: prev ? ((price - prev) / prev) * 100 : 0,
+      hi52: m.fiftyTwoWeekHigh ?? 0,
+      lo52: m.fiftyTwoWeekLow ?? 0,
+      name: m.longName ?? m.shortName ?? tk,
+      open: r.indicators?.quote?.[0]?.open?.find((x: any) => x != null),
+      high: m.regularMarketDayHigh,
+      low:  m.regularMarketDayLow,
+      vol:  m.regularMarketVolume,
+    };
+  } catch (e) {
+    console.error(`[quote ${tk}]`, (e as Error).message);
+    return null;
+  }
 }
 
 export async function getQuotes(tickers: string[]): Promise<Record<string, Quote>> {
   if (!tickers.length) return {};
-  try {
-    const rs = await yahooFinance.quote(tickers);
-    const arr = Array.isArray(rs) ? rs : [rs];
-    const out: Record<string, Quote> = {};
-    for (const q of arr) {
-      const quote = _quoteFromRaw(q);
-      out[quote.ticker] = quote;
-    }
-    return out;
-  } catch { return {}; }
+  const arr = await Promise.all(tickers.map(t => getQuote(t)));
+  const out: Record<string, Quote> = {};
+  arr.forEach(q => { if (q) out[q.ticker] = q; });
+  return out;
 }
 
 export type Candle = { t: number; o: number; h: number; l: number; c: number; v: number };
 
-export async function getChart(ticker: string, range: string = "1mo"): Promise<Candle[]> {
-  const ranges: Record<string, { days: number; interval: any }> = {
-    "1d":  { days: 1,    interval: "5m"  },
-    "5d":  { days: 5,    interval: "30m" },
-    "1mo": { days: 31,   interval: "1d"  },
-    "3mo": { days: 92,   interval: "1d"  },
-    "6mo": { days: 183,  interval: "1d"  },
-    "1y":  { days: 366,  interval: "1d"  },
-    "2y":  { days: 731,  interval: "1d"  },
-    "5y":  { days: 1826, interval: "1wk" },
-  };
-  const r = ranges[range] ?? ranges["1mo"];
-  const period1 = new Date(Date.now() - r.days * 86_400_000);
-  const period2 = new Date();
+const INTERVAL: Record<string, string> = {
+  "1d": "5m", "5d": "30m", "1mo": "1d", "3mo": "1d",
+  "6mo": "1d", "1y": "1d", "2y": "1wk", "5y": "1wk",
+};
 
+export async function getChart(ticker: string, range: string = "1mo"): Promise<Candle[]> {
+  const tk = ticker.toUpperCase();
+  const interval = INTERVAL[range] ?? "1d";
   try {
-    const res: any = await yahooFinance.chart(ticker.toUpperCase(), {
-      period1, period2, interval: r.interval,
-    });
-    const quotes = res?.quotes ?? [];
-    return quotes
-      .map((q: any) => ({
-        t: q.date ? Math.floor(new Date(q.date).getTime() / 1000) : 0,
-        o: q.open ?? q.close ?? 0,
-        h: q.high ?? q.close ?? 0,
-        l: q.low  ?? q.close ?? 0,
-        c: q.close ?? 0,
-        v: q.volume ?? 0,
-      }))
-      .filter((c: Candle) => c.c > 0 && c.t > 0);
+    const j: any = await _yfetch(
+      `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(tk)}?interval=${interval}&range=${range}`,
+    );
+    const r = j?.chart?.result?.[0];
+    if (!r) return [];
+    const ts: number[] = r.timestamp ?? [];
+    const q = r.indicators?.quote?.[0] ?? {};
+    const out: Candle[] = [];
+    for (let i = 0; i < ts.length; i++) {
+      const c = q.close?.[i]; if (c == null) continue;
+      out.push({
+        t: ts[i],
+        o: q.open?.[i] ?? c,
+        h: q.high?.[i] ?? c,
+        l: q.low?.[i]  ?? c,
+        c,
+        v: q.volume?.[i] ?? 0,
+      });
+    }
+    return out;
   } catch (e) {
-    console.error(`[chart ${ticker}]`, e);
+    console.error(`[chart ${tk}]`, (e as Error).message);
     return [];
   }
 }
 
-/** Last N daily closes — for sparklines. */
 export async function getSparkline(ticker: string, days = 7): Promise<number[]> {
-  try {
-    const c = await getChart(ticker, days <= 5 ? "5d" : "1mo");
-    return c.slice(-days).map(x => x.c);
-  } catch { return []; }
+  const c = await getChart(ticker, "1mo");
+  return c.slice(-days).map(x => x.c);
 }
 
 export type NewsItem = { title: string; publisher: string; link: string; ts: number; thumb?: string };
 
 export async function getNews(ticker: string, limit = 8): Promise<NewsItem[]> {
-  // Try search() — most reliable in newer yahoo-finance2 versions.
+  const tk = ticker.toUpperCase();
   try {
-    const res: any = await yahooFinance.search(ticker, {
-      newsCount: limit, quotesCount: 0,
-    } as any);
-    const news = res?.news ?? [];
-    if (news.length) {
-      return news.slice(0, limit).map((n: any) => ({
-        title: n.title ?? "",
-        publisher: n.publisher ?? "",
-        link: n.link ?? "",
-        ts: n.providerPublishTime
-          ? (typeof n.providerPublishTime === "number"
-              ? (n.providerPublishTime > 1e12 ? n.providerPublishTime / 1000 : n.providerPublishTime)
-              : new Date(n.providerPublishTime).getTime() / 1000)
-          : 0,
-        thumb: (n.thumbnail?.resolutions ?? [])[0]?.url,
-      })).filter((n: NewsItem) => n.title);
-    }
-  } catch (e) { console.error(`[news search ${ticker}]`, e); }
-
-  // Fallback to insights() which also returns news on some accounts.
-  try {
-    const res: any = await (yahooFinance as any).insights?.(ticker);
-    const sigDevs = res?.sigDevs ?? [];
-    return sigDevs.slice(0, limit).map((s: any) => ({
-      title: s.headline ?? "", publisher: "Yahoo Insights",
-      link: `https://finance.yahoo.com/quote/${ticker}`,
-      ts: s.date ? new Date(s.date).getTime() / 1000 : 0,
+    const j: any = await _yfetch(
+      `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(tk)}&newsCount=${limit}&quotesCount=0`,
+    );
+    return (j?.news ?? []).slice(0, limit).map((n: any) => ({
+      title: n.title ?? "",
+      publisher: n.publisher ?? "",
+      link: n.link ?? "",
+      ts: typeof n.providerPublishTime === "number" ? n.providerPublishTime : 0,
+      thumb: (n.thumbnail?.resolutions ?? [])[0]?.url,
     })).filter((n: NewsItem) => n.title);
-  } catch { return []; }
+  } catch (e) {
+    console.error(`[news ${tk}]`, (e as Error).message);
+    return [];
+  }
 }

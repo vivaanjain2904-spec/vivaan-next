@@ -2,7 +2,7 @@
 const nextConfig = {
   reactStrictMode: true,
   experimental: {
-    serverComponentsExternalPackages: ["yahoo-finance2", "@neondatabase/serverless"],
+    serverComponentsExternalPackages: ["@neondatabase/serverless"],
   },
 };
 module.exports = nextConfig;

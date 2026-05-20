@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import StockSearch from "@/components/StockSearch";
+import Chart from "@/components/Chart";
 import { fp, fpp, clr } from "@/lib/format";
 
 type Quote = { ticker: string; price: number; pct: number; hi52: number; lo52: number; name: string };
@@ -22,7 +23,14 @@ export default function TradePage() {
     setPositions(r.positions);
     setQuotes(r.quotes);
   }
-  useEffect(() => { loadAll(); }, []);
+  useEffect(() => {
+    loadAll();
+    // Coming from Screener with a preselected ticker?
+    if (typeof window !== "undefined") {
+      const t = sessionStorage.getItem("trade_ticker");
+      if (t) { setTicker(t); sessionStorage.removeItem("trade_ticker"); }
+    }
+  }, []);
   useEffect(() => {
     if (tab !== "history") return;
     fetch("/api/trade").then(r => r.json()).then(j => setTrades(j.trades ?? []));
@@ -141,8 +149,13 @@ function QuoteCard({ q, positions, cash, onTrade, onMsg }: {
   const [bl,  setBl]    = useState(0);
   const [mlA, setMlA]   = useState(false);
   const [busy, setBusy] = useState(false);
+  const [chart, setChart] = useState<any[]>([]);
   const cost = qty * q.price;
   const inPort = positions.find(p => p.ticker === q.ticker);
+
+  useEffect(() => {
+    fetch(`/api/chart/${q.ticker}?range=1mo`).then(r => r.json()).then(j => setChart(j.data ?? []));
+  }, [q.ticker]);
 
   async function buy() {
     setBusy(true);
@@ -181,6 +194,12 @@ function QuoteCard({ q, positions, cash, onTrade, onMsg }: {
           </div>
         </div>
       </div>
+
+      {chart.length > 0 && (
+        <div className="panel mb-5">
+          <Chart data={chart} height={240} mode="area" />
+        </div>
+      )}
 
       <div className="grid md:grid-cols-2 gap-4">
         <div className="panel">

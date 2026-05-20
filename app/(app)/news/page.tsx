@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 
-type Item = { title: string; publisher: string; link: string; ts: number; _tk: string };
+type Item = { title: string; publisher: string; link: string; ts: number; thumb?: string; _tk: string };
 
 export default function NewsPage() {
   const [tickers, setTickers] = useState<string[]>([]);
@@ -11,11 +11,12 @@ export default function NewsPage() {
 
   useEffect(() => {
     fetch("/api/portfolio").then(r => r.json()).then(j => {
-      const all = Array.from(new Set<string>([
+      const tracked = Array.from(new Set<string>([
         ...j.positions.map((p: any) => p.ticker),
         ...j.watchlist.map((w: any) => w.ticker),
       ])).sort();
-      setTickers(all);
+      // If user has nothing tracked yet, fall back to broad market news.
+      setTickers(tracked.length ? tracked : ["AAPL", "NVDA", "TSLA", "MSFT", "GOOGL", "AMZN", "META"]);
     });
   }, []);
 
@@ -48,15 +49,23 @@ export default function NewsPage() {
       <div className="grid md:grid-cols-2 gap-3">
         {items.slice(0, 30).map((n, i) => (
           <a key={i} href={n.link} target="_blank" rel="noreferrer"
-             className="panel-glow block hover:border-mint/40 transition-all hover:-translate-y-0.5">
+             className="panel-hover block group">
             <div className="flex items-center gap-2 mb-2">
               <span className="tk-tag">{n._tk}</span>
+              <span className="text-[11px] text-mint font-semibold uppercase tracking-wider">{n.publisher}</span>
               <span className="text-[11px] text-muted font-mono ml-auto">
                 {n.ts ? new Date(n.ts * 1000).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : ""}
               </span>
             </div>
-            <div className="text-sm font-semibold text-ink leading-snug mb-2">{n.title}</div>
-            <div className="text-[11px] text-mint font-mono">{n.publisher}</div>
+            <div className="flex gap-3">
+              <div className="flex-1 text-sm font-medium text-ink leading-snug group-hover:text-mint transition-colors">
+                {n.title}
+              </div>
+              {(n as any).thumb && (
+                <img src={(n as any).thumb} alt=""
+                     className="w-20 h-14 object-cover rounded-md flex-shrink-0 border border-border1" />
+              )}
+            </div>
           </a>
         ))}
       </div>
