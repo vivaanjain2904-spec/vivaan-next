@@ -1,0 +1,71 @@
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700;800&family=DM+Mono:wght@400;500&display=swap');
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html, body { background: #000402; color: #f0f6f1; font-family: 'Space Grotesk', sans-serif; }
+  body {
+    background: radial-gradient(ellipse at top, #0a1810 0%, #000402 50%) fixed;
+    min-height: 100vh;
+  }
+  ::-webkit-scrollbar { width: 4px; height: 4px; }
+  ::-webkit-scrollbar-thumb { background: #243a26; border-radius: 2px; }
+}
+
+@layer components {
+  .panel {
+    @apply bg-card border border-border1 rounded-2xl p-5 backdrop-blur-sm relative overflow-hidden;
+  }
+  .panel-glow {
+    @apply panel;
+    background: linear-gradient(155deg, rgba(11,19,14,.95), rgba(16,26,18,.95));
+    box-shadow: 0 8px 32px -12px rgba(63,245,160,0.15);
+  }
+  .section-h {
+    @apply text-[11px] font-extrabold tracking-[.22em] uppercase text-ink2
+      pb-2.5 mb-3 border-b border-border1 flex items-center gap-2 relative;
+  }
+  .section-h::before {
+    content: '';
+    @apply inline-block w-1 h-3 rounded-sm;
+    background: linear-gradient(180deg, #3ff5a0, #22c46e);
+    box-shadow: 0 0 10px rgba(63,245,160,.4);
+  }
+  .section-h::after {
+    content: '';
+    @apply absolute -bottom-px left-0 w-16 h-px;
+    background: linear-gradient(90deg, #3ff5a0, transparent);
+  }
+  .tk-tag {
+    @apply inline-block px-2 py-0.5 rounded-md text-[12px] font-extrabold tracking-wider text-mint;
+    background: linear-gradient(135deg, rgba(63,245,160,.12), rgba(34,196,110,.06));
+    border: 1px solid rgba(63,245,160,.25);
+  }
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-full text-[12px]
+      font-bold tracking-[.14em] uppercase transition-all border;
+  }
+  .btn-mint {
+    @apply btn bg-mint text-bg border-mint hover:shadow-glow;
+  }
+  .btn-ghost {
+    @apply btn bg-card2 text-muted border-border1 hover:text-mint hover:border-mint;
+  }
+  .btn-red {
+    @apply btn bg-transparent text-red border-red/40 hover:bg-red/10;
+  }
+  .input {
+    @apply w-full bg-card border border-border1 rounded-lg px-3 py-2.5 text-sm text-ink
+      placeholder:text-muted focus:outline-none focus:border-mint focus:ring-1 focus:ring-mint/30;
+  }
+  .label {
+    @apply block text-[11px] font-bold tracking-[.14em] uppercase text-muted mb-1.5;
+  }
+  .pill {
+    @apply inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[12px] font-bold;
+  }
+  .pill-buy  { @apply pill bg-mint/12 text-mint border border-mint/25; }
+  .pill-sell { @apply pill bg-red/12  text-red  border border-red/25;  }
+  .pill-hold { @apply pill bg-card2   text-muted border border-border1; }
+}

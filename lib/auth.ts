@@ -1,0 +1,61 @@
+import { cookies } from "next/headers";
+import { SignJWT, jwtVerify } from "jose";
+import bcrypt from "bcryptjs";
+import { sql } from "./db";
+
+const SECRET = new TextEncoder().encode(
+  process.env.JWT_SECRET ?? "dev-secret-change-me-please-please-please",
+);
+const COOKIE = "vv_session";
+
+export type Session = { uid: number; name: string };
+
+export async function signSession(s: Session): Promise<string> {
+  return await new SignJWT(s as any)
+    .setProtectedHeader({ alg: "HS256" })
+    .setIssuedAt()
+    .setExpirationTime("30d")
+    .sign(SECRET);
+}
+
+export async function readSession(): Promise<Session | null> {
+  const tok = cookies().get(COOKIE)?.value;
+  if (!tok) return null;
+  try {
+    const { payload } = await jwtVerify(tok, SECRET);
+    return { uid: Number(payload.uid), name: String(payload.name) };
+  } catch {
+    return null;
+  }
+}
+
+export async function setSessionCookie(s: Session) {
+  const token = await signSession(s);
+  cookies().set(COOKIE, token, {
+    httpOnly: true, secure: true, sameSite: "lax",
+    path: "/", maxAge: 60 * 60 * 24 * 30,
+  });
+}
+
+export function clearSessionCookie() {
+  cookies().delete(COOKIE);
+}
+
+export async function hashPassword(pw: string) { return bcrypt.hash(pw, 10); }
+export async function verifyPassword(pw: string, hash: string) {
+  return bcrypt.compare(pw, hash);
+}
+
+/** Throws 401 if not signed in. Use in API routes. */
+export async function requireSession(): Promise<Session> {
+  const s = await readSession();
+  if (!s) throw new Response("Unauthorized", { status: 401 });
+  return s;
+}
+
+/** Look up user with notification settings (used by cron). */
+export async function getUserSettings(uid: number) {
+  const r = await sql`SELECT id, name, cash, ml_alerts, ml_threshold,
+    ntfy_topic, discord_webhook FROM users WHERE id=${uid}`;
+  return r.rows[0] ?? null;
+}
