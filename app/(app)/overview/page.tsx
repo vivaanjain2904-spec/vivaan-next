@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { fp, fpp, clr } from "@/lib/format";
 import { Kpi } from "@/components/Kpi";
 import Sparkline from "@/components/Sparkline";
+import Allocation from "@/components/Allocation";
 
 type PortfolioRes = {
   user: { name: string; cash: number; ml_threshold: number };
@@ -23,7 +24,19 @@ export default function OverviewPage() {
   }, []);
 
   if (err) return <div className="panel text-red text-sm">{err}</div>;
-  if (!d)  return <div className="panel text-muted text-sm">Loading…</div>;
+  if (!d)  return (
+    <>
+      <div className="flex flex-wrap gap-3 mb-7">
+        {Array.from({length: 5}).map((_, i) => (
+          <div key={i} className="panel flex-1 min-w-[160px]">
+            <div className="h-3 bg-card2 rounded mb-3 w-1/2 animate-shimmer" />
+            <div className="h-7 bg-card2 rounded animate-shimmer" />
+            <div className="h-2 bg-card2 rounded mt-3 w-2/3 animate-shimmer" />
+          </div>
+        ))}
+      </div>
+    </>
+  );
 
   const positions = d.positions;
   const cash = Number(d.user.cash);
@@ -93,6 +106,17 @@ export default function OverviewPage() {
                 <span className="text-ink">{a.msg}</span>
               </div>
             ))}
+          </div>
+        </>
+      )}
+
+      {positions.length > 1 && (
+        <>
+          <div className="section-h">Portfolio Allocation</div>
+          <div className="panel mb-7 dot-grid">
+            <Allocation slices={positions
+              .map(p => ({ ticker: p.ticker, value: (d.quotes[p.ticker]?.price ?? 0) * p.qty }))
+              .filter(s => s.value > 0)} />
           </div>
         </>
       )}

@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { fp } from "@/lib/format";
+import MarketStatus from "./MarketStatus";
 
 type Me = { name: string; cash: number } | null;
 
@@ -58,6 +59,7 @@ export default function Header() {
         </div>
       </div>
       <div className="flex items-center gap-2">
+        <MarketStatus />
         <span className="pill-muted font-mono">{fp(me.cash)}</span>
         {notifs > 0 && <span className="pill-mint">🔔 {notifs}</span>}
         <span className="pill-muted">{me.name}</span>

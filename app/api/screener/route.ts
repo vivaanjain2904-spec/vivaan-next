@@ -1,34 +1,40 @@
 import { NextResponse } from "next/server";
-import { getQuotes } from "@/lib/yfinance";
+import { getQuote, type Quote } from "@/lib/yfinance";
+import { UNIVERSE } from "@/lib/universe";
 import { sql } from "@/lib/db";
 
-export const revalidate = 180; // 3-min cache
+export const revalidate = 300;        // 5-min cache
+export const maxDuration = 60;        // allow up to 60s on Vercel
 
-// Popular cross-sector subset of the universe — fast enough to query live
-const POPULAR = [
-  "AAPL","MSFT","NVDA","GOOGL","AMZN","META","TSLA","NFLX",
-  "AMD","AVGO","ORCL","CRM","ADBE","INTC","CSCO","QCOM","MU","ARM",
-  "JPM","BAC","GS","MS","WFC","V","MA","BRK-B","BLK",
-  "WMT","COST","KO","PEP","MCD","NKE","SBUX","DIS","HD","LOW",
-  "XOM","CVX","CAT","BA","LMT","GE","UPS","FDX",
-  "COIN","HOOD","PLTR","SOFI","UBER","SHOP","ABNB","SNOW","MDB","CRWD","PANW",
-  "UNH","JNJ","LLY","PFE","MRK","ABBV","TMO","ABT",
-];
+/** Fetch quotes in concurrent chunks so we don't hammer Yahoo (or our function). */
+async function chunkFetchQuotes(tickers: string[], chunkSize = 25): Promise<Quote[]> {
+  const out: Quote[] = [];
+  for (let i = 0; i < tickers.length; i += chunkSize) {
+    const slice = tickers.slice(i, i + chunkSize);
+    const results = await Promise.all(slice.map(t => getQuote(t).catch(() => null)));
+    for (const q of results) if (q) out.push(q);
+  }
+  return out;
+}
 
 export async function GET() {
-  const quotes = await getQuotes(POPULAR);
-  const arr = Object.values(quotes);
+  const arr = await chunkFetchQuotes(UNIVERSE);
 
-  const gainers = [...arr].sort((a, b) => b.pct - a.pct).slice(0, 10);
-  const losers  = [...arr].sort((a, b) => a.pct - b.pct).slice(0, 10);
-  const active  = [...arr].sort((a, b) => (b.vol ?? 0) - (a.vol ?? 0)).slice(0, 10);
+  const gainers = [...arr].filter(q => q.pct != null).sort((a, b) => b.pct - a.pct).slice(0, 25);
+  const losers  = [...arr].filter(q => q.pct != null).sort((a, b) => a.pct - b.pct).slice(0, 25);
+  const active  = [...arr].sort((a, b) => (b.vol ?? 0) - (a.vol ?? 0)).slice(0, 25);
 
   let ml: any[] = [];
   try {
     const r = await sql`SELECT ticker, drop_probability, price, rsi, return_1m
-      FROM ml_signals ORDER BY drop_probability ASC LIMIT 40`;
+      FROM ml_signals ORDER BY drop_probability ASC LIMIT 50`;
     ml = r.rows;
   } catch { ml = []; }
 
-  return NextResponse.json({ gainers, losers, active, ml, ts: new Date().toISOString() });
+  return NextResponse.json({
+    gainers, losers, active, ml,
+    scanned: arr.length,
+    universe: UNIVERSE.length,
+    ts: new Date().toISOString(),
+  });
 }

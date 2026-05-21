@@ -33,6 +33,9 @@ export default function StockSearch({
 
   return (
     <div className="relative">
+      <div className="absolute right-3 top-1/2 -translate-y-1/2 z-10 pointer-events-none">
+        <span className="pill-muted text-[10px] !py-0.5 !px-2">{universe.length} stocks</span>
+      </div>
       <input
         id={id.current}
         name={id.current}
@@ -40,7 +43,7 @@ export default function StockSearch({
         autoCorrect="off"
         autoCapitalize="characters"
         spellCheck={false}
-        className="input font-mono uppercase tracking-wider"
+        className="input font-mono uppercase tracking-wider pr-24"
         value={query}
         onChange={e => { setQuery(e.target.value); setOpen(true); setIdx(0); }}
         onFocus={() => setOpen(true)}
