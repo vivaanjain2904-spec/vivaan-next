@@ -1,12 +1,19 @@
 import { neon } from "@neondatabase/serverless";
 
-const URL = process.env.POSTGRES_URL || process.env.DATABASE_URL || "";
-if (!URL) console.warn("⚠ POSTGRES_URL not set");
+// Lazy-init the neon client so module import succeeds at build time even when
+// POSTGRES_URL is not yet set (Vercel Postgres injects it after first deploy).
+let _sql: any = null;
+function _client() {
+  if (_sql) return _sql;
+  const URL = process.env.POSTGRES_URL || process.env.DATABASE_URL;
+  if (!URL) throw new Error("POSTGRES_URL not set — connect Vercel Postgres in Storage tab");
+  _sql = neon(URL);
+  return _sql;
+}
 
 // Tagged-template SQL helper. Usage: await sql`SELECT ... ${value}`
-const _sql = neon(URL);
 export const sql = async (strings: TemplateStringsArray, ...values: any[]) => {
-  const rows = await _sql(strings as any, ...values);
+  const rows = await _client()(strings as any, ...values);
   return { rows: rows as any[] };
 };
 
