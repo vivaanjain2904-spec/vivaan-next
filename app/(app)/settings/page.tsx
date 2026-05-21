@@ -19,6 +19,7 @@ export default function SettingsPage() {
   const [recent, setRecent] = useState<any[]>([]);
   const [seedRes, setSeedRes] = useState<any>(null);
   const [pingRes, setPingRes] = useState<any>(null);
+  const [runRes, setRunRes]   = useState<any>(null);
 
   async function load() {
     const j = await fetch("/api/auth/me").then(r => r.json());
@@ -60,6 +61,12 @@ export default function SettingsPage() {
     const r = await fetch("/api/alpaca-ping", { method: "POST" });
     const j = await r.json();
     setPingRes(j);
+  }
+  async function runAlertCheck() {
+    setRunRes({ loading: true });
+    const r = await fetch("/api/run-alerts-self", { method: "POST" });
+    const j = await r.json();
+    setRunRes(j);
   }
   async function seedDemo() {
     setSeedRes({ loading: true });
@@ -151,11 +158,35 @@ export default function SettingsPage() {
       </div>
 
       {/* Save bar */}
-      <div className="flex gap-2 mb-7">
-        <button onClick={saveSettings} className="btn-mint flex-1">💾 Save All Settings</button>
+      <div className="flex gap-2 mb-3 flex-wrap">
+        <button onClick={saveSettings} className="btn-mint flex-1 min-w-[200px]">💾 Save All Settings</button>
         {user.ntfy_topic && <button onClick={testNotify} className="btn-ghost">📱 Test Phone</button>}
-        {(user.alpaca_key && user.alpaca_secret) && <button onClick={pingAlpaca} className="btn-ghost">🔌 Test Alpaca</button>}
+        {(user.alpaca_key && user.alpaca_secret) && (
+          <>
+            <button onClick={pingAlpaca}      className="btn-ghost">🔌 Test Alpaca</button>
+            <button onClick={runAlertCheck}   className="btn-ghost">🤖 Run Alert Check</button>
+          </>
+        )}
       </div>
+      {runRes && !runRes.loading && (
+        <div className="panel mb-7 text-xs font-mono space-y-1">
+          <div className="text-mint">
+            ✓ Checked {runRes.checked ?? 0} tickers · {runRes.msg}
+          </div>
+          {runRes.breaches?.length > 0 && (
+            <div className="text-amber">
+              Breaches: {runRes.breaches.map((b: any) => `${b.ticker}/${b.kind}`).join(", ")}
+            </div>
+          )}
+          {runRes.orders?.length > 0 && (
+            <div className="text-mint">
+              🤖 Alpaca orders: {runRes.orders.map((o: any) =>
+                `${o.ticker} ${o.ok ? `✓ ${o.orderId}` : `✗ ${o.error}`}`).join(", ")}
+            </div>
+          )}
+        </div>
+      )}
+      {runRes?.loading && <div className="panel mb-7 text-xs text-muted">Running alert check…</div>}
 
       {/* Demo Portfolio */}
       <div className="section-h">Demo Portfolio</div>
