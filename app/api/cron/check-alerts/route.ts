@@ -5,8 +5,6 @@ import { computeSignal } from "@/lib/signal";
 import { alertUser } from "@/lib/ntfy";
 import { alpacaSell, alpacaBuy } from "@/lib/alpaca";
 
-const AUTO_BUY_SIZE_USD = 500;
-
 export const maxDuration = 60;
 
 /**
@@ -27,7 +25,7 @@ export async function GET(req: Request) {
   await initDb().catch(() => {});
 
   const usersR = await sql`SELECT id, name, ntfy_topic, discord_webhook,
-    ml_alerts, ml_threshold, alpaca_key, alpaca_secret, auto_trade FROM users`;
+    ml_alerts, ml_threshold, alpaca_key, alpaca_secret, auto_trade, auto_buy_size FROM users`;
   if (!usersR.rows.length) return NextResponse.json({ ok: true, msg: "no users" });
 
   // Collect every ticker across all users
@@ -189,7 +187,8 @@ export async function GET(req: Request) {
         const prob = ml[w.ticker];
         if (prob == null || prob > buyThr) continue;
         const q = quotes[w.ticker]; if (!q?.price) continue;
-        const qty = Math.floor(AUTO_BUY_SIZE_USD / q.price);
+        const buyBudget = Number(user.auto_buy_size) || 500;
+        const qty = Math.floor(buyBudget / q.price);
         if (qty < 1) continue;
         const cost = qty * q.price;
         if (cost > cash) continue;

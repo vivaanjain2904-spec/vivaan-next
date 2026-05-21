@@ -6,8 +6,6 @@ import { computeSignal } from "@/lib/signal";
 import { alertUser } from "@/lib/ntfy";
 import { alpacaSell, alpacaBuy } from "@/lib/alpaca";
 
-const AUTO_BUY_SIZE_USD = 500;   // $ per auto-buy
-
 export const maxDuration = 30;
 
 /**
@@ -19,7 +17,7 @@ export async function POST() {
   const s = await requireSession();
 
   const userRow = await sql`SELECT id, name, ntfy_topic, discord_webhook,
-    ml_alerts, ml_threshold, alpaca_key, alpaca_secret, auto_trade
+    ml_alerts, ml_threshold, alpaca_key, alpaca_secret, auto_trade, auto_buy_size
     FROM users WHERE id=${s.uid}`;
   const user = userRow.rows[0];
   if (!user) return NextResponse.json({ error: "user not found" }, { status: 404 });
@@ -140,7 +138,8 @@ export async function POST() {
       const prob = ml[w.ticker];
       if (prob == null || prob > buySignalThr) continue;
       const q = quotes[w.ticker]; if (!q?.price) continue;
-      const qty = Math.floor(AUTO_BUY_SIZE_USD / q.price);
+      const buyBudget = Number(user.auto_buy_size) || 500;
+      const qty = Math.floor(buyBudget / q.price);
       if (qty < 1) continue;
       const cost = qty * q.price;
       if (cost > cash) continue;

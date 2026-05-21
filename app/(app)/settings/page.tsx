@@ -14,6 +14,7 @@ export default function SettingsPage() {
   const [apSec, setApSec] = useState("");
   const [autoT, setAutoT] = useState(false);
   const [smartStops, setSmartStops] = useState(false);
+  const [autoBuySize, setAutoBuySize] = useState(500);
   const [pw, setPw] = useState("");
   const [pw2, setPw2] = useState("");
   const [msg, setMsg] = useState("");
@@ -34,6 +35,7 @@ export default function SettingsPage() {
     setApSec(j.user.alpaca_secret ? "•••••••••••" : "");
     setAutoT(!!j.user.auto_trade);
     setSmartStops(!!j.user.smart_stops);
+    setAutoBuySize(Number(j.user.auto_buy_size) || 500);
     const nj = await fetch("/api/notifications").then(r => r.json());
     setRecent(nj.recent ?? []);
   }
@@ -45,6 +47,7 @@ export default function SettingsPage() {
       ml_alerts: mlOn, ml_threshold: mlThr,
       alpaca_key: apKey, auto_trade: autoT,
       smart_stops: smartStops,
+      auto_buy_size: autoBuySize,
     };
     // Only send secret if user typed a new one (not the masked value)
     if (apSec && !apSec.startsWith("•")) body.alpaca_secret = apSec;
@@ -161,6 +164,22 @@ export default function SettingsPage() {
             </span>
           </span>
         </label>
+
+        <div className="mt-4">
+          <label className="label">Auto-buy size per trade ($)</label>
+          <input
+            type="number"
+            min={1}
+            step={100}
+            value={autoBuySize}
+            onChange={e => setAutoBuySize(Math.max(1, Number(e.target.value) || 0))}
+            className="input font-mono max-w-xs"
+            placeholder="500"
+          />
+          <div className="text-muted text-[11px] mt-1">
+            When auto-trader fires a BUY, it spends up to this amount (any number you want — $50, $500, $50,000). Bot rounds down to whole shares.
+          </div>
+        </div>
         {pingRes && (
           <div className={`mt-3 text-xs p-3 rounded-lg font-mono ${pingRes.ok ? "bg-mint/10 text-mint" : "bg-red/10 text-red"}`}>
             {pingRes.loading ? "Pinging…"

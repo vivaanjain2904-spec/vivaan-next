@@ -212,8 +212,9 @@ function QuoteCard({ q, positions, cash, onTrade, onMsg }: {
         <div className="panel">
           <div className="section-h" style={{ marginTop: 0 }}>Paper Buy</div>
           <label className="label">Shares</label>
-          <input type="number" className="input" min={1} value={qty}
-                 onChange={e => setQty(Math.max(1, Number(e.target.value)))} />
+          <input type="number" className="input font-mono" min={1} step={1} value={qty}
+                 onChange={e => setQty(Math.max(1, Number(e.target.value) || 1))}
+                 placeholder="any amount" />
           {smartOn && smart ? (
             <div className="mt-3 p-3 bg-mint/8 border border-mint/25 rounded-lg text-[12px]">
               <div className="text-mint font-semibold mb-1.5">🧠 Smart stops on — bot is picking:</div>
