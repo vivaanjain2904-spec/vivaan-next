@@ -15,6 +15,7 @@ const COLORS = [
 export default function Allocation({ slices }: { slices: Slice[] }) {
   if (!slices.length) return null;
   const total = slices.reduce((a, s) => a + s.value, 0);
+  if (total <= 0) return null;          // guard against divide-by-zero
   const sorted = [...slices].sort((a, b) => b.value - a.value);
   const top = sorted.slice(0, 8);
   const otherVal = sorted.slice(8).reduce((a, s) => a + s.value, 0);

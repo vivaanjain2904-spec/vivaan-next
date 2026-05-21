@@ -53,14 +53,15 @@ export async function GET(req: Request) {
   const ml: Record<string, number> = {};
   for (const r of pyR.rows) ml[r.ticker] = Number(r.drop_probability);
 
-  // Compute live for tickers without a Python score (chunked)
-  const need = tickerArr.filter(t => ml[t] == null);
-  for (let i = 0; i < need.length; i += 10) {
-    const slice = need.slice(i, i + 10);
-    const charts = await Promise.all(slice.map(t => getChart(t, "3mo").catch(() => [])));
+  // Compute live for tickers without a Python score.
+  // Cap at 15 — Vercel Hobby caps functions at 10s, and chart fetches are ~1s each.
+  // For larger user bases either upload Python scores or upgrade to Pro for maxDuration=60.
+  const need = tickerArr.filter(t => ml[t] == null).slice(0, 15);
+  if (need.length) {
+    const charts = await Promise.all(need.map(t => getChart(t, "3mo").catch(() => [])));
     charts.forEach((c, j) => {
       const sig = computeSignal(c);
-      if (sig) ml[slice[j]] = sig.dropProb;
+      if (sig) ml[need[j]] = sig.dropProb;
     });
   }
 
@@ -77,13 +78,21 @@ export async function GET(req: Request) {
     return nowActive && !was;
   }
 
-  async function tryAutoSell(user: any, ticker: string, qty: number, reason: string) {
+  async function tryAutoSell(user: any, ticker: string, qty: number, price: number, reason: string) {
     if (!user.auto_trade || !user.alpaca_key || !user.alpaca_secret) return null;
     const r = await alpacaSell(
       { key: user.alpaca_key, secret: user.alpaca_secret }, ticker, qty);
-    return r.ok
-      ? `🤖 Auto-sold ${qty} ${ticker} via Alpaca (${reason}). Order ${r.orderId}`
-      : `🤖 Auto-sell FAILED for ${ticker}: ${r.error}`;
+    if (r.ok) {
+      // Mirror the sell in our local DB so future cron runs don't re-alert
+      try {
+        await sql`DELETE FROM positions WHERE user_id=${user.id} AND ticker=${ticker}`;
+        await sql`UPDATE users SET cash = cash + ${qty * price} WHERE id=${user.id}`;
+        await sql`INSERT INTO trades (user_id, ticker, side, qty, price)
+          VALUES (${user.id}, ${ticker}, 'SELL', ${qty}, ${price})`;
+      } catch {}
+      return `🤖 Auto-sold ${qty} ${ticker} via Alpaca (${reason}). Order ${r.orderId}`;
+    }
+    return `🤖 Auto-sell FAILED for ${ticker}: ${r.error}`;
   }
 
   let total = 0;
@@ -105,7 +114,7 @@ export async function GET(req: Request) {
       if (await transition(user.id, p.ticker, "stop", !!stopHit)) {
         const title = `🔴 ${p.ticker} hit stop-loss`;
         const body  = `${p.ticker} $${px.toFixed(2)} (${pnl >= 0 ? "+" : ""}${pnl.toFixed(1)}% vs $${avg.toFixed(2)})`;
-        const auto  = await tryAutoSell(user, p.ticker, Number(p.qty), "stop-loss");
+        const auto  = await tryAutoSell(user, p.ticker, Number(p.qty), px, "stop-loss");
         await sql`INSERT INTO notifications (user_id, ticker, kind, title, body)
           VALUES (${user.id}, ${p.ticker}, 'stop', ${title}, ${auto ? body + " · " + auto : body})`;
         sent.push({ title, body: auto ? body + " · " + auto : body }); total++;
@@ -113,7 +122,7 @@ export async function GET(req: Request) {
       if (await transition(user.id, p.ticker, "target", !!tgtHit)) {
         const title = `🟢 ${p.ticker} hit take-profit`;
         const body  = `${p.ticker} $${px.toFixed(2)} (${pnl >= 0 ? "+" : ""}${pnl.toFixed(1)}% vs $${avg.toFixed(2)})`;
-        const auto  = await tryAutoSell(user, p.ticker, Number(p.qty), "take-profit");
+        const auto  = await tryAutoSell(user, p.ticker, Number(p.qty), px, "take-profit");
         await sql`INSERT INTO notifications (user_id, ticker, kind, title, body)
           VALUES (${user.id}, ${p.ticker}, 'target', ${title}, ${auto ? body + " · " + auto : body})`;
         sent.push({ title, body: auto ? body + " · " + auto : body }); total++;
@@ -121,7 +130,7 @@ export async function GET(req: Request) {
       if (await transition(user.id, p.ticker, "ml_hold", !!mlHit)) {
         const title = `⚠️ ${p.ticker} ML sell signal`;
         const body  = `Drop probability ${(prob! * 100).toFixed(0)}% — at or above your ${(Number(user.ml_threshold) * 100).toFixed(0)}% threshold`;
-        const auto  = await tryAutoSell(user, p.ticker, Number(p.qty), "ml-signal");
+        const auto  = await tryAutoSell(user, p.ticker, Number(p.qty), px, "ml-signal");
         await sql`INSERT INTO notifications (user_id, ticker, kind, title, body)
           VALUES (${user.id}, ${p.ticker}, 'ml_hold', ${title}, ${auto ? body + " · " + auto : body})`;
         sent.push({ title, body: auto ? body + " · " + auto : body }); total++;
