@@ -41,6 +41,7 @@ export async function initDb() {
   try { await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS alpaca_key TEXT`; } catch {}
   try { await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS alpaca_secret TEXT`; } catch {}
   try { await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS auto_trade BOOLEAN NOT NULL DEFAULT FALSE`; } catch {}
+  try { await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT FALSE`; } catch {}
   await sql`CREATE TABLE IF NOT EXISTS positions (
     user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
     ticker  TEXT NOT NULL,

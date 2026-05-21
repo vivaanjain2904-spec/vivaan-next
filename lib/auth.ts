@@ -53,9 +53,19 @@ export async function requireSession(): Promise<Session> {
   return s;
 }
 
-/** Look up user with notification settings (used by cron). */
+/** Throws 403 if signed-in user is not an admin. */
+export async function requireAdmin(): Promise<Session> {
+  const s = await requireSession();
+  const r = await sql`SELECT is_admin FROM users WHERE id=${s.uid}`;
+  if (!r.rows[0]?.is_admin) throw new Response("Forbidden", { status: 403 });
+  return s;
+}
+
+/** Look up user with notification settings + Alpaca + admin flag. */
 export async function getUserSettings(uid: number) {
   const r = await sql`SELECT id, name, cash, ml_alerts, ml_threshold,
-    ntfy_topic, discord_webhook FROM users WHERE id=${uid}`;
+    ntfy_topic, discord_webhook, alpaca_key, alpaca_secret, auto_trade,
+    is_admin
+    FROM users WHERE id=${uid}`;
   return r.rows[0] ?? null;
 }
