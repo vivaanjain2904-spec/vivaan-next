@@ -1,19 +1,22 @@
 import { NextResponse } from "next/server";
 import { sql, initDb } from "@/lib/db";
-import { getQuotes } from "@/lib/yfinance";
+import { getQuotes, getChart } from "@/lib/yfinance";
+import { computeSignal } from "@/lib/signal";
 import { alertUser } from "@/lib/ntfy";
+import { alpacaSell } from "@/lib/alpaca";
+
+export const maxDuration = 60;
 
 /**
- * Runs every 5 min (vercel.json cron).
- * For each user:
- *   - load positions + watchlist
- *   - fetch live quotes
- *   - evaluate stop/target/above/below/ML breaches against alert_state
- *   - insert notifications for newly-true conditions
- *   - send to each user's ntfy + discord channel
+ * Vercel Cron — every 5 min (see vercel.json).
+ * For each user, evaluates:
+ *   - stop-loss / take-profit on holdings
+ *   - watchlist alert_above / alert_below
+ *   - ML signal (Python override OR live RSI/MA/momentum) >= threshold
+ * For each new alert: send to ntfy + Discord. If auto_trade is on and Alpaca
+ * keys exist, execute a paper sell for the breached stop/target/ML position.
  */
 export async function GET(req: Request) {
-  // Vercel sets a CRON_SECRET; refuse anonymous hits
   const auth = req.headers.get("authorization") || "";
   if (process.env.CRON_SECRET && auth !== `Bearer ${process.env.CRON_SECRET}`) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
@@ -22,10 +25,10 @@ export async function GET(req: Request) {
   await initDb().catch(() => {});
 
   const usersR = await sql`SELECT id, name, ntfy_topic, discord_webhook,
-    ml_alerts, ml_threshold FROM users`;
+    ml_alerts, ml_threshold, alpaca_key, alpaca_secret, auto_trade FROM users`;
   if (!usersR.rows.length) return NextResponse.json({ ok: true, msg: "no users" });
 
-  // Collect all tickers
+  // Collect every ticker across all users
   const allTickers = new Set<string>();
   const userData: any[] = [];
   for (const u of usersR.rows) {
@@ -39,13 +42,28 @@ export async function GET(req: Request) {
     wl.rows.forEach(w => allTickers.add(w.ticker));
     userData.push({ user: u, positions: pos.rows, watch: wl.rows });
   }
+  const tickerArr = Array.from(allTickers);
 
-  const quotes = await getQuotes(Array.from(allTickers));
-  const mlR = await sql`SELECT ticker, drop_probability FROM ml_signals`;
+  // Live quotes
+  const quotes = await getQuotes(tickerArr);
+
+  // ML signals — Python uploads first, fall back to live compute per ticker
+  const pyR = await sql`SELECT ticker, drop_probability FROM ml_signals
+    WHERE ticker = ANY(${tickerArr as any})`;
   const ml: Record<string, number> = {};
-  for (const r of mlR.rows) ml[r.ticker] = Number(r.drop_probability);
+  for (const r of pyR.rows) ml[r.ticker] = Number(r.drop_probability);
 
-  // Transition helper (returns true on inactive→active flip)
+  // Compute live for tickers without a Python score (chunked)
+  const need = tickerArr.filter(t => ml[t] == null);
+  for (let i = 0; i < need.length; i += 10) {
+    const slice = need.slice(i, i + 10);
+    const charts = await Promise.all(slice.map(t => getChart(t, "3mo").catch(() => [])));
+    charts.forEach((c, j) => {
+      const sig = computeSignal(c);
+      if (sig) ml[slice[j]] = sig.dropProb;
+    });
+  }
+
   async function transition(uid: number, ticker: string, kind: string, nowActive: boolean) {
     const cur = await sql`SELECT active FROM alert_state
       WHERE user_id=${uid} AND ticker=${ticker} AND kind=${kind}`;
@@ -59,10 +77,20 @@ export async function GET(req: Request) {
     return nowActive && !was;
   }
 
+  async function tryAutoSell(user: any, ticker: string, qty: number, reason: string) {
+    if (!user.auto_trade || !user.alpaca_key || !user.alpaca_secret) return null;
+    const r = await alpacaSell(
+      { key: user.alpaca_key, secret: user.alpaca_secret }, ticker, qty);
+    return r.ok
+      ? `🤖 Auto-sold ${qty} ${ticker} via Alpaca (${reason}). Order ${r.orderId}`
+      : `🤖 Auto-sell FAILED for ${ticker}: ${r.error}`;
+  }
+
   let total = 0;
   for (const { user, positions, watch } of userData) {
     const sent: Array<{ title: string; body: string }> = [];
 
+    // Holdings: stop / target / ML
     for (const p of positions) {
       const q = quotes[p.ticker]; if (!q) continue;
       const px = q.price, avg = Number(p.avg_cost);
@@ -71,32 +99,36 @@ export async function GET(req: Request) {
       const tp = p.take_profit != null ? Number(p.take_profit) : null;
       const stopHit = sl != null && avg && px <= avg * (1 - sl);
       const tgtHit  = tp != null && avg && px >= avg * (1 + tp);
+      const prob = ml[p.ticker];
+      const mlHit = user.ml_alerts && prob != null && prob >= Number(user.ml_threshold);
 
       if (await transition(user.id, p.ticker, "stop", !!stopHit)) {
         const title = `🔴 ${p.ticker} hit stop-loss`;
-        const body  = `${p.ticker} $${px.toFixed(2)} (${pnl >= 0 ? "+" : ""}${pnl.toFixed(1)}% vs $${avg.toFixed(2)} entry)`;
+        const body  = `${p.ticker} $${px.toFixed(2)} (${pnl >= 0 ? "+" : ""}${pnl.toFixed(1)}% vs $${avg.toFixed(2)})`;
+        const auto  = await tryAutoSell(user, p.ticker, Number(p.qty), "stop-loss");
         await sql`INSERT INTO notifications (user_id, ticker, kind, title, body)
-          VALUES (${user.id}, ${p.ticker}, 'stop', ${title}, ${body})`;
-        sent.push({ title, body }); total++;
+          VALUES (${user.id}, ${p.ticker}, 'stop', ${title}, ${auto ? body + " · " + auto : body})`;
+        sent.push({ title, body: auto ? body + " · " + auto : body }); total++;
       }
       if (await transition(user.id, p.ticker, "target", !!tgtHit)) {
         const title = `🟢 ${p.ticker} hit take-profit`;
-        const body  = `${p.ticker} $${px.toFixed(2)} (${pnl >= 0 ? "+" : ""}${pnl.toFixed(1)}% vs $${avg.toFixed(2)} entry)`;
+        const body  = `${p.ticker} $${px.toFixed(2)} (${pnl >= 0 ? "+" : ""}${pnl.toFixed(1)}% vs $${avg.toFixed(2)})`;
+        const auto  = await tryAutoSell(user, p.ticker, Number(p.qty), "take-profit");
         await sql`INSERT INTO notifications (user_id, ticker, kind, title, body)
-          VALUES (${user.id}, ${p.ticker}, 'target', ${title}, ${body})`;
-        sent.push({ title, body }); total++;
+          VALUES (${user.id}, ${p.ticker}, 'target', ${title}, ${auto ? body + " · " + auto : body})`;
+        sent.push({ title, body: auto ? body + " · " + auto : body }); total++;
       }
-      const prob = ml[p.ticker];
-      const mlHit = user.ml_alerts && prob != null && prob >= Number(user.ml_threshold);
       if (await transition(user.id, p.ticker, "ml_hold", !!mlHit)) {
         const title = `⚠️ ${p.ticker} ML sell signal`;
-        const body  = `Model: ${(prob * 100).toFixed(0)}% chance of >3% drop (your holding)`;
+        const body  = `Drop probability ${(prob! * 100).toFixed(0)}% — at or above your ${(Number(user.ml_threshold) * 100).toFixed(0)}% threshold`;
+        const auto  = await tryAutoSell(user, p.ticker, Number(p.qty), "ml-signal");
         await sql`INSERT INTO notifications (user_id, ticker, kind, title, body)
-          VALUES (${user.id}, ${p.ticker}, 'ml_hold', ${title}, ${body})`;
-        sent.push({ title, body }); total++;
+          VALUES (${user.id}, ${p.ticker}, 'ml_hold', ${title}, ${auto ? body + " · " + auto : body})`;
+        sent.push({ title, body: auto ? body + " · " + auto : body }); total++;
       }
     }
 
+    // Watchlist: above / below / ML
     for (const w of watch) {
       const q = quotes[w.ticker]; if (!q) continue;
       const px = q.price;
@@ -121,14 +153,13 @@ export async function GET(req: Request) {
       const mlW  = user.ml_alerts && w.ml_alert && prob != null && prob >= Number(user.ml_threshold);
       if (await transition(user.id, w.ticker, "ml_watch", !!mlW)) {
         const title = `⚠️ ${w.ticker} ML sell signal (watchlist)`;
-        const body  = `Model: ${(prob * 100).toFixed(0)}% chance of >3% drop`;
+        const body  = `Drop probability ${(prob! * 100).toFixed(0)}%`;
         await sql`INSERT INTO notifications (user_id, ticker, kind, title, body)
           VALUES (${user.id}, ${w.ticker}, 'ml_watch', ${title}, ${body})`;
         sent.push({ title, body }); total++;
       }
     }
 
-    // Push to device channels
     for (const s of sent) await alertUser(user, s.title, s.body);
   }
 

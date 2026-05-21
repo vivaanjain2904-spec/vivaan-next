@@ -21,8 +21,15 @@ export async function initDb() {
     ml_threshold  DOUBLE PRECISION NOT NULL DEFAULT 0.65,
     ntfy_topic    TEXT,
     discord_webhook TEXT,
+    alpaca_key    TEXT,
+    alpaca_secret TEXT,
+    auto_trade    BOOLEAN NOT NULL DEFAULT FALSE,
     created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )`;
+  // Idempotent column adds (for DBs created before these existed)
+  try { await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS alpaca_key TEXT`; } catch {}
+  try { await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS alpaca_secret TEXT`; } catch {}
+  try { await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS auto_trade BOOLEAN NOT NULL DEFAULT FALSE`; } catch {}
   await sql`CREATE TABLE IF NOT EXISTS positions (
     user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
     ticker  TEXT NOT NULL,

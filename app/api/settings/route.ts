@@ -2,20 +2,24 @@ import { NextResponse } from "next/server";
 import { sql } from "@/lib/db";
 import { requireSession, hashPassword } from "@/lib/auth";
 
-/** Update notification settings + ML alert prefs. */
 export async function POST(req: Request) {
   const s = await requireSession();
-  const { ntfy_topic, discord_webhook, ml_alerts, ml_threshold } = await req.json();
+  const {
+    ntfy_topic, discord_webhook, ml_alerts, ml_threshold,
+    alpaca_key, alpaca_secret, auto_trade,
+  } = await req.json();
   await sql`UPDATE users SET
     ntfy_topic      = ${ntfy_topic ? String(ntfy_topic).trim() : null},
     discord_webhook = ${discord_webhook ? String(discord_webhook).trim() : null},
     ml_alerts       = ${!!ml_alerts},
-    ml_threshold    = ${Number(ml_threshold) || 0.65}
+    ml_threshold    = ${Number(ml_threshold) || 0.65},
+    alpaca_key      = ${alpaca_key    ? String(alpaca_key).trim()    : null},
+    alpaca_secret   = ${alpaca_secret ? String(alpaca_secret).trim() : null},
+    auto_trade      = ${!!auto_trade}
     WHERE id=${s.uid}`;
   return NextResponse.json({ ok: true });
 }
 
-/** Change password. */
 export async function PATCH(req: Request) {
   const s = await requireSession();
   const { password } = await req.json();
@@ -25,7 +29,6 @@ export async function PATCH(req: Request) {
   return NextResponse.json({ ok: true });
 }
 
-/** Reset paper account (wipe positions/trades, reset cash). */
 export async function DELETE(req: Request) {
   const s = await requireSession();
   const cash = Number(new URL(req.url).searchParams.get("cash")) || 100000;
