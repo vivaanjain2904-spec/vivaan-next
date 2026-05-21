@@ -162,11 +162,9 @@ export default function SettingsPage() {
         <button onClick={saveSettings} className="btn-mint flex-1 min-w-[200px]">💾 Save All Settings</button>
         {user.ntfy_topic && <button onClick={testNotify} className="btn-ghost">📱 Test Phone</button>}
         {(user.alpaca_key && user.alpaca_secret) && (
-          <>
-            <button onClick={pingAlpaca}      className="btn-ghost">🔌 Test Alpaca</button>
-            <button onClick={runAlertCheck}   className="btn-ghost">🤖 Run Alert Check</button>
-          </>
+          <button onClick={pingAlpaca} className="btn-ghost">🔌 Test Alpaca</button>
         )}
+        <button onClick={runAlertCheck} className="btn-ghost">🤖 Run Alert Check</button>
       </div>
       {runRes && !runRes.loading && (
         <div className="panel mb-7 text-xs font-mono space-y-1">

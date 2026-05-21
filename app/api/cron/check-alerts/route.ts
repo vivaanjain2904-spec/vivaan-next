@@ -81,20 +81,26 @@ export async function GET(req: Request) {
   }
 
   async function tryAutoSell(user: any, ticker: string, qty: number, price: number, reason: string) {
-    if (!user.auto_trade || !user.alpaca_key || !user.alpaca_secret) return null;
-    const r = await alpacaSell(
-      { key: user.alpaca_key, secret: user.alpaca_secret }, ticker, qty);
-    if (r.ok) {
-      // Mirror the sell in our local DB so future cron runs don't re-alert
-      try {
-        await sql`DELETE FROM positions WHERE user_id=${user.id} AND ticker=${ticker}`;
-        await sql`UPDATE users SET cash = cash + ${qty * price} WHERE id=${user.id}`;
-        await sql`INSERT INTO trades (user_id, ticker, side, qty, price)
-          VALUES (${user.id}, ${ticker}, 'SELL', ${qty}, ${price})`;
-      } catch {}
-      return `🤖 Auto-sold ${qty} ${ticker} via Alpaca (${reason}). Order ${r.orderId}`;
+    if (!user.auto_trade) return null;
+
+    let alpacaOrderId: string | undefined, alpacaErr: string | undefined;
+    if (user.alpaca_key && user.alpaca_secret) {
+      const r = await alpacaSell(
+        { key: user.alpaca_key, secret: user.alpaca_secret }, ticker, qty);
+      if (r.ok) alpacaOrderId = r.orderId; else alpacaErr = r.error;
     }
-    return `🤖 Auto-sell FAILED for ${ticker}: ${r.error}`;
+
+    // Always mirror the sell in our local DB
+    try {
+      await sql`DELETE FROM positions WHERE user_id=${user.id} AND ticker=${ticker}`;
+      await sql`UPDATE users SET cash = cash + ${qty * price} WHERE id=${user.id}`;
+      await sql`INSERT INTO trades (user_id, ticker, side, qty, price)
+        VALUES (${user.id}, ${ticker}, 'SELL', ${qty}, ${price})`;
+    } catch {}
+
+    if (alpacaOrderId) return `🤖 Auto-sold ${qty} ${ticker} via Alpaca (${reason}). Order ${alpacaOrderId}`;
+    if (alpacaErr)     return `🤖 Paper auto-sold ${qty} ${ticker} (${reason}). Alpaca failed: ${alpacaErr}`;
+    return `🤖 Paper auto-sold ${qty} ${ticker} (${reason})`;
   }
 
   let total = 0;
@@ -172,7 +178,7 @@ export async function GET(req: Request) {
     }
 
     // ───── AUTO-BUY: strong bullish ML signal on watchlist ─────
-    if (user.auto_trade && user.alpaca_key && user.alpaca_secret) {
+    if (user.auto_trade) {
       const cashR = await sql`SELECT cash FROM users WHERE id=${user.id}`;
       let cash = Number(cashR.rows[0]?.cash ?? 0);
       const heldSet = new Set(positions.map((p: any) => p.ticker));
@@ -189,25 +195,28 @@ export async function GET(req: Request) {
         if (cost > cash) continue;
         if (!(await transition(user.id, w.ticker, "ml_buy", true))) continue;
 
-        const r = await alpacaBuy(
-          { key: user.alpaca_key, secret: user.alpaca_secret }, w.ticker, qty);
-        if (r.ok) {
-          try {
-            await sql`INSERT INTO positions (user_id, ticker, qty, avg_cost, stop_loss, take_profit)
-              VALUES (${user.id}, ${w.ticker}, ${qty}, ${q.price}, 0.05, 0.10)
-              ON CONFLICT (user_id, ticker) DO NOTHING`;
-            await sql`UPDATE users SET cash = cash - ${cost} WHERE id=${user.id}`;
-            await sql`INSERT INTO trades (user_id, ticker, side, qty, price)
-              VALUES (${user.id}, ${w.ticker}, 'BUY', ${qty}, ${q.price})`;
-            cash -= cost;
-          } catch {}
-          const title = `🤖 Auto-bought ${qty} ${w.ticker}`;
-          const body  = `ML drop-prob ${(prob*100).toFixed(0)}% — strong buy. Order ${r.orderId}.`;
-          await sql`INSERT INTO notifications (user_id, ticker, kind, title, body)
-            VALUES (${user.id}, ${w.ticker}, 'auto_buy', ${title}, ${body})`;
-          await alertUser(user, title, body);
-          total++;
+        let alpacaOrderId: string | undefined;
+        if (user.alpaca_key && user.alpaca_secret) {
+          const r = await alpacaBuy(
+            { key: user.alpaca_key, secret: user.alpaca_secret }, w.ticker, qty);
+          if (r.ok) alpacaOrderId = r.orderId;
         }
+        try {
+          await sql`INSERT INTO positions (user_id, ticker, qty, avg_cost, stop_loss, take_profit)
+            VALUES (${user.id}, ${w.ticker}, ${qty}, ${q.price}, 0.05, 0.10)
+            ON CONFLICT (user_id, ticker) DO NOTHING`;
+          await sql`UPDATE users SET cash = cash - ${cost} WHERE id=${user.id}`;
+          await sql`INSERT INTO trades (user_id, ticker, side, qty, price)
+            VALUES (${user.id}, ${w.ticker}, 'BUY', ${qty}, ${q.price})`;
+          cash -= cost;
+        } catch {}
+        const title = `🤖 Auto-bought ${qty} ${w.ticker}`;
+        const body  = `ML drop-prob ${(prob*100).toFixed(0)}% — strong buy.` +
+          (alpacaOrderId ? ` Alpaca order ${alpacaOrderId}.` : " (paper-only).");
+        await sql`INSERT INTO notifications (user_id, ticker, kind, title, body)
+          VALUES (${user.id}, ${w.ticker}, 'auto_buy', ${title}, ${body})`;
+        await alertUser(user, title, body);
+        total++;
       }
       // Reset ml_buy state when signal weakens
       for (const w of watch) {
