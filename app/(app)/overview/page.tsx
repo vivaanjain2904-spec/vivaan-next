@@ -16,10 +16,19 @@ type PortfolioRes = {
 export default function OverviewPage() {
   const [d, setD] = useState<PortfolioRes | null>(null);
   const [err, setErr] = useState("");
+  const [sigs, setSigs] = useState<Record<string, any>>({});
 
   useEffect(() => {
     fetch("/api/portfolio").then(r => r.json()).then(j => {
-      if (j.error) setErr(j.error); else setD(j);
+      if (j.error) { setErr(j.error); return; }
+      setD(j);
+      const tickers = j.positions.map((p: any) => p.ticker);
+      if (tickers.length) {
+        fetch("/api/signals", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ tickers }),
+        }).then(r => r.json()).then(s => setSigs(s.signals ?? {}));
+      }
     }).catch(e => setErr(String(e)));
   }, []);
 
@@ -149,7 +158,8 @@ export default function OverviewPage() {
               const val = q.price * p.qty;
               const stop = p.stop_loss   ? p.avg_cost * (1 - p.stop_loss)   : null;
               const tgt  = p.take_profit ? p.avg_cost * (1 + p.take_profit) : null;
-              const mlP = d.ml[p.ticker];
+              const sig = sigs[p.ticker];
+              const mlP = sig?.dropProb ?? d.ml[p.ticker];
               return (
                 <tr key={p.ticker} className="border-b border-border1/50 last:border-b-0 hover:bg-card2/50 transition-colors">
                   <td className="px-5 py-3 font-sans">
@@ -165,8 +175,13 @@ export default function OverviewPage() {
                   <td className="px-3 py-3 text-right text-ink">{fp(val)}</td>
                   <td className="px-3 py-3 text-right text-red/80">{stop ? fp(stop) : "—"}</td>
                   <td className="px-3 py-3 text-right text-mint/80">{tgt ? fp(tgt) : "—"}</td>
-                  <td className="px-5 py-3 text-right text-amber">
-                    {mlP != null ? `${(mlP * 100).toFixed(0)}%` : "—"}
+                  <td className="px-5 py-3 text-right">
+                    {mlP != null ? (
+                      <span className={
+                        mlP >= 0.65 ? "pill-red"  :
+                        mlP <= 0.35 ? "pill-mint" : "pill-muted"
+                      }>{(mlP * 100).toFixed(0)}%</span>
+                    ) : <span className="text-muted">—</span>}
                   </td>
                 </tr>
               );

@@ -16,6 +16,7 @@ export default function ScreenerPage() {
   } | null>(null);
   const [tab, setTab] = useState<"gainers" | "losers" | "active" | "all" | "ml">("gainers");
   const [search, setSearch] = useState("");
+  const [computedSig, setComputedSig] = useState<Record<string, any> | null>(null);
   const [secs, setSecs] = useState(0);
 
   useEffect(() => {
@@ -36,11 +37,37 @@ export default function ScreenerPage() {
     { k: "ml",      label: "ML Signals",   icon: "🤖" },
   ] as const;
 
+  // When the ML tab is opened, compute live signals for the top 30 active stocks
+  // if there are no Python-uploaded signals.
+  useEffect(() => {
+    if (tab !== "ml" || !data || computedSig !== null || data.ml.length > 0) return;
+    const ticks = data.active.slice(0, 30).map(q => q.ticker);
+    if (!ticks.length) return;
+    fetch("/api/signals", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tickers: ticks }),
+    }).then(r => r.json()).then(j => setComputedSig(j.signals ?? {}));
+  }, [tab, data, computedSig]);
+
+  // For the ML tab, prefer Python overrides; otherwise fall back to computed signals.
+  const mlRows: any[] =
+    data ? (data.ml.length
+      ? data.ml
+      : Object.entries(computedSig ?? {}).map(([ticker, s]: any) => ({
+          ticker,
+          drop_probability: s.dropProb,
+          price: data.active.find(q => q.ticker === ticker)?.price,
+          rsi: s.rsi,
+          return_1m: s.momentum1m != null ? s.momentum1m / 100 : null,
+          source: s.source ?? "live",
+        })).sort((a, b) => b.drop_probability - a.drop_probability)
+    ) : [];
+
   const baseRows: any[] =
     data ? (tab === "gainers" ? data.gainers :
             tab === "losers"  ? data.losers  :
             tab === "active"  ? data.active  :
-            tab === "all"     ? data.all     : data.ml) : [];
+            tab === "all"     ? data.all     : mlRows) : [];
 
   const q = search.trim().toUpperCase();
   const rowsList = q
@@ -115,17 +142,15 @@ export default function ScreenerPage() {
           <TableSkeleton rows={10} />
         ) : tab === "ml" && rowsList.length === 0 ? (
           <div className="p-12 text-center">
-            <div className="text-3xl mb-3">🤖</div>
-            <div className="text-ink font-semibold mb-1">No ML signals yet</div>
-            <div className="text-muted text-sm max-w-md mx-auto mb-4">
-              ML drop-probability scores come from your local Python screener.
+            <div className="text-3xl mb-3 animate-pulse">🤖</div>
+            <div className="text-ink font-semibold mb-1">Computing signals…</div>
+            <div className="text-muted text-sm max-w-md mx-auto mb-2">
+              Real-time RSI + moving-average + momentum signal for the top 30 most-active stocks.
             </div>
-            <code className="text-mint text-[11px] block bg-card2 p-3 rounded-lg font-mono text-left max-w-md mx-auto">
-              cd ~/ai-portfolio-agent<br />
-              python screener.py<br />
-              cd ../vivaan-next/scripts<br />
-              python upload-screener.py
-            </code>
+            <div className="text-muted text-[11px] max-w-md mx-auto mt-3">
+              Want your own trained ML model? Run <code className="text-mint">python screener.py</code> locally,
+              then <code className="text-mint">python upload-screener.py</code> — uploaded scores override the live signal.
+            </div>
           </div>
         ) : rowsList.length === 0 ? (
           <div className="p-12 text-center text-muted">No results.</div>
