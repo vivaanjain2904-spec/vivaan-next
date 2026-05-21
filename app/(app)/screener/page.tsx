@@ -11,10 +11,11 @@ type ML = { ticker: string; drop_probability: number; price?: number; rsi?: numb
 export default function ScreenerPage() {
   const router = useRouter();
   const [data, setData] = useState<{
-    gainers: Q[]; losers: Q[]; active: Q[]; ml: ML[];
+    gainers: Q[]; losers: Q[]; active: Q[]; all: Q[]; ml: ML[];
     scanned: number; universe: number; ts: string;
   } | null>(null);
-  const [tab, setTab] = useState<"gainers" | "losers" | "active" | "ml">("gainers");
+  const [tab, setTab] = useState<"gainers" | "losers" | "active" | "all" | "ml">("gainers");
+  const [search, setSearch] = useState("");
   const [secs, setSecs] = useState(0);
 
   useEffect(() => {
@@ -31,13 +32,22 @@ export default function ScreenerPage() {
     { k: "gainers", label: "Top Gainers",  icon: "📈" },
     { k: "losers",  label: "Top Losers",   icon: "📉" },
     { k: "active",  label: "Most Active",  icon: "🔥" },
+    { k: "all",     label: "All Stocks",   icon: "📋" },
     { k: "ml",      label: "ML Signals",   icon: "🤖" },
   ] as const;
 
-  const rowsList: any[] =
+  const baseRows: any[] =
     data ? (tab === "gainers" ? data.gainers :
             tab === "losers"  ? data.losers  :
-            tab === "active"  ? data.active  : data.ml) : [];
+            tab === "active"  ? data.active  :
+            tab === "all"     ? data.all     : data.ml) : [];
+
+  const q = search.trim().toUpperCase();
+  const rowsList = q
+    ? baseRows.filter((r: any) =>
+        String(r.ticker).toUpperCase().includes(q) ||
+        String(r.name ?? "").toUpperCase().includes(q))
+    : baseRows;
 
   function trade(tk: string) {
     sessionStorage.setItem("trade_ticker", tk);
@@ -52,7 +62,7 @@ export default function ScreenerPage() {
 
   return (
     <>
-      <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
+      <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
         <div>
           <h1 className="text-xl font-bold text-ink">Market Screener</h1>
           <div className="text-[12px] text-muted mt-0.5">
@@ -70,6 +80,17 @@ export default function ScreenerPage() {
           ))}
         </div>
       </div>
+
+      {tab === "all" && (
+        <div className="mb-3">
+          <input
+            className="input max-w-md font-mono"
+            placeholder={`Filter ${data?.all.length ?? 546} stocks (e.g. NVDA, Apple)`}
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+          />
+        </div>
+      )}
 
       {data ? (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">

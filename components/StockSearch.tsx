@@ -21,10 +21,10 @@ export default function StockSearch({
 
   const matches = useMemo(() => {
     const q = query.trim().toUpperCase();
-    if (!q) return universe.slice(0, 30);
+    if (!q) return universe;   // show all, dropdown is scrollable
     const starts = universe.filter(t => t.startsWith(q));
     const contains = universe.filter(t => !t.startsWith(q) && t.includes(q));
-    return [...starts, ...contains].slice(0, 30);
+    return [...starts, ...contains];
   }, [query, universe]);
 
   function pick(tk: string) {

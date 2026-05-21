@@ -23,6 +23,7 @@ export async function GET() {
   const gainers = [...arr].filter(q => q.pct != null).sort((a, b) => b.pct - a.pct).slice(0, 25);
   const losers  = [...arr].filter(q => q.pct != null).sort((a, b) => a.pct - b.pct).slice(0, 25);
   const active  = [...arr].sort((a, b) => (b.vol ?? 0) - (a.vol ?? 0)).slice(0, 25);
+  const all     = [...arr].sort((a, b) => a.ticker.localeCompare(b.ticker));
 
   let ml: any[] = [];
   try {
@@ -32,7 +33,7 @@ export async function GET() {
   } catch { ml = []; }
 
   return NextResponse.json({
-    gainers, losers, active, ml,
+    gainers, losers, active, all, ml,
     scanned: arr.length,
     universe: UNIVERSE.length,
     ts: new Date().toISOString(),
