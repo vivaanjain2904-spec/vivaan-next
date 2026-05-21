@@ -3,8 +3,9 @@ import { getQuote, type Quote } from "@/lib/yfinance";
 import { UNIVERSE } from "@/lib/universe";
 import { sql } from "@/lib/db";
 
-export const revalidate = 300;        // 5-min cache
-export const maxDuration = 60;        // allow up to 60s on Vercel
+export const dynamic    = "force-dynamic";   // never prerender at build
+export const revalidate = 300;               // 5-min cache between live calls
+export const maxDuration = 60;               // allow up to 60s on Vercel Pro
 
 /** Fetch quotes in concurrent chunks so we don't hammer Yahoo (or our function). */
 async function chunkFetchQuotes(tickers: string[], chunkSize = 25): Promise<Quote[]> {
