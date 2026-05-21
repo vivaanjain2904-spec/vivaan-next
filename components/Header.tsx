@@ -54,8 +54,8 @@ export default function Header() {
           <span className="text-mint text-[15px] font-bold leading-none">V</span>
         </div>
         <div>
-          <div className="text-[13px] font-bold text-ink tracking-tight leading-none">Vaelor</div>
-          <div className="text-[10px] text-muted leading-none mt-0.5">Portfolio Agent</div>
+          <div className="font-vaelor text-[20px] leading-none">VAELOR</div>
+          <div className="text-[9px] text-muted leading-none mt-1 tracking-[0.3em] uppercase">Portfolio Agent</div>
         </div>
       </div>
       <div className="flex items-center gap-2">
