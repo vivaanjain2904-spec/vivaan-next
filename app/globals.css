@@ -81,6 +81,16 @@
       text-ink text-[13px] tracking-wide py-2
       focus:outline-none focus:border-vaelor transition-colors;
   }
+  /* Kill Chrome's white autofill background */
+  .auth-input:-webkit-autofill,
+  .auth-input:-webkit-autofill:hover,
+  .auth-input:-webkit-autofill:focus,
+  .auth-input:-webkit-autofill:active {
+    -webkit-box-shadow: 0 0 0 1000px #0a0a0b inset !important;
+    -webkit-text-fill-color: #fafafa !important;
+    caret-color: #fafafa;
+    transition: background-color 9999s ease-in-out 0s;
+  }
 
   /* Pills */
   .pill {
