@@ -31,7 +31,7 @@ export default function RegisterPage() {
         <div className="text-xl font-extrabold tracking-[.28em] uppercase"
              style={{ background: "linear-gradient(135deg,#3ff5a0,#22c46e)",
                       WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
-          Vivaan.io
+          Vaelor
         </div>
       </div>
       <div className="panel-glow">

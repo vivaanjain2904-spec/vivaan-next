@@ -54,7 +54,7 @@ export default function Header() {
           <span className="text-mint text-[15px] font-bold leading-none">V</span>
         </div>
         <div>
-          <div className="text-[13px] font-bold text-ink tracking-tight leading-none">Vivaan</div>
+          <div className="text-[13px] font-bold text-ink tracking-tight leading-none">Vaelor</div>
           <div className="text-[10px] text-muted leading-none mt-0.5">Portfolio Agent</div>
         </div>
       </div>

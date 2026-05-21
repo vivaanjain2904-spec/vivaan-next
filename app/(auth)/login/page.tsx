@@ -33,7 +33,7 @@ export default function LoginPage() {
              style={{ background: "linear-gradient(135deg,#3ff5a0,#22c46e)",
                       WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent",
                       filter: "drop-shadow(0 0 22px rgba(63,245,160,.5))" }}>
-          Vivaan.io
+          Vaelor
         </div>
         <div className="text-[11px] text-muted tracking-[.18em] uppercase mt-2">
           AI · Portfolio · Agent
