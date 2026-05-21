@@ -17,6 +17,8 @@ export default function ScreenerPage() {
   const [tab, setTab] = useState<"gainers" | "losers" | "active" | "all" | "ml">("gainers");
   const [search, setSearch] = useState("");
   const [computedSig, setComputedSig] = useState<Record<string, any> | null>(null);
+  const [smartStops, setSmartStops]   = useState<Record<string, { stop_loss: number; take_profit: number }>>({});
+  const [suggLoading, setSuggLoading] = useState(false);
   const [secs, setSecs] = useState(0);
 
   useEffect(() => {
@@ -48,6 +50,33 @@ export default function ScreenerPage() {
       body: JSON.stringify({ tickers: ticks }),
     }).then(r => r.json()).then(j => setComputedSig(j.signals ?? {}));
   }, [tab, data, computedSig]);
+
+  // For Top Gainers/Losers/Active tabs, lazily fetch signals + smart-stops
+  // for the visible 25 rows so users see BUY/HOLD/SELL pills + target prices.
+  useEffect(() => {
+    if (!data || tab === "all" || tab === "ml") return;
+    const visible = (tab === "gainers" ? data.gainers : tab === "losers" ? data.losers : data.active)
+      .map(q => q.ticker);
+    const need = visible.filter(t => !computedSig?.[t]);
+    if (!need.length) return;
+    setSuggLoading(true);
+    fetch("/api/signals", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tickers: need }),
+    }).then(r => r.json()).then(async j => {
+      setComputedSig(prev => ({ ...(prev ?? {}), ...(j.signals ?? {}) }));
+      // Fetch smart-stop levels in parallel (no auth required)
+      const stops = await Promise.all(
+        need.map(t => fetch(`/api/smart-stops/${t}`).then(r => r.json()).catch(() => null))
+      );
+      setSmartStops(prev => {
+        const out = { ...prev };
+        need.forEach((t, i) => { if (stops[i] && !stops[i].error) out[t] = stops[i]; });
+        return out;
+      });
+      setSuggLoading(false);
+    });
+  }, [tab, data]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // For the ML tab, prefer Python overrides; otherwise fall back to computed signals.
   const mlRows: any[] =
@@ -171,8 +200,12 @@ export default function ScreenerPage() {
                 ) : (
                   <>
                     <th className="text-right px-3 py-3">Day %</th>
-                    <th className="text-right px-3 py-3">Volume</th>
-                    <th className="text-right px-3 py-3 hidden md:table-cell">Bar</th>
+                    <th className="text-right px-3 py-3 hidden md:table-cell">Volume</th>
+                    <th className="text-center px-3 py-3">
+                      Signal {suggLoading && <span className="text-mint animate-pulse">•</span>}
+                    </th>
+                    <th className="text-right px-3 py-3 hidden lg:table-cell">Buy ≤</th>
+                    <th className="text-right px-3 py-3 hidden lg:table-cell">Sell @</th>
                   </>
                 )}
                 <th className="text-right px-5 py-3">Actions</th>
@@ -206,20 +239,37 @@ export default function ScreenerPage() {
                           {r.return_1m != null ? fpp(Number(r.return_1m) * 100) : "—"}
                         </td>
                       </>
-                    ) : (
-                      <>
-                        <td className={`px-3 py-3 text-right font-semibold ${clr(pct ?? 0)}`}>{fpp(pct ?? 0)}</td>
-                        <td className="px-3 py-3 text-right text-ink2">{fmtVol(r.vol)}</td>
-                        <td className="px-3 py-3 hidden md:table-cell">
-                          <div className="ml-auto w-[100px] h-1.5 bg-card2 rounded-full overflow-hidden">
-                            <div
-                              className={`h-full ${(pct ?? 0) >= 0 ? "bg-mint" : "bg-red"}`}
-                              style={{ width: `${barWidth}%` }}
-                            />
-                          </div>
-                        </td>
-                      </>
-                    )}
+                    ) : (() => {
+                      const sig = computedSig?.[r.ticker];
+                      const stops = smartStops[r.ticker];
+                      const buyAt  = sig && stops && r.price && sig.recommendation === "BUY"
+                        ? r.price * (1 - stops.stop_loss * 0.5)  // halfway between live price and stop
+                        : null;
+                      const sellAt = sig && stops && r.price && sig.recommendation !== "SELL"
+                        ? r.price * (1 + stops.take_profit)
+                        : null;
+                      return (
+                        <>
+                          <td className={`px-3 py-3 text-right font-semibold ${clr(pct ?? 0)}`}>{fpp(pct ?? 0)}</td>
+                          <td className="px-3 py-3 text-right text-ink2 hidden md:table-cell">{fmtVol(r.vol)}</td>
+                          <td className="px-3 py-3 text-center">
+                            {sig ? (
+                              <span className={
+                                sig.recommendation === "BUY"  ? "pill-mint" :
+                                sig.recommendation === "SELL" ? "pill-red"  :
+                                                                "pill-muted"
+                              }>{sig.recommendation}</span>
+                            ) : <span className="text-muted text-[11px]">—</span>}
+                          </td>
+                          <td className="px-3 py-3 text-right text-mint hidden lg:table-cell">
+                            {buyAt ? fp(buyAt) : "—"}
+                          </td>
+                          <td className="px-3 py-3 text-right text-amber hidden lg:table-cell">
+                            {sellAt ? fp(sellAt) : "—"}
+                          </td>
+                        </>
+                      );
+                    })()}
                     <td className="px-5 py-3 text-right">
                       <div className="flex justify-end gap-1.5">
                         <button onClick={() => trade(r.ticker)}

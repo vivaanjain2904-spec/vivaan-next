@@ -9,6 +9,7 @@ const PAGES = [
   { href: "/screener",  label: "Screener"  },
   { href: "/watchlist", label: "Watchlist" },
   { href: "/charts",    label: "Charts"    },
+  { href: "/backtest",  label: "Backtest"  },
   { href: "/news",      label: "News"      },
   { href: "/settings",  label: "Settings"  },
 ];
