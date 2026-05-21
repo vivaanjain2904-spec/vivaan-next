@@ -2,7 +2,7 @@ import "./globals.css";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Vaelor · AI Portfolio Agent",
+  title: "Vaelor · AI Trading & Investment",
   description: "Multi-user paper trading with ML signals and push alerts",
 };
 

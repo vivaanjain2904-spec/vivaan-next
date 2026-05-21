@@ -55,7 +55,7 @@ export default function Header() {
         </div>
         <div>
           <div className="font-vaelor text-[20px] leading-none">VAELOR</div>
-          <div className="text-[9px] text-muted leading-none mt-1 tracking-[0.3em] uppercase">Portfolio Agent</div>
+          <div className="text-[9px] text-muted leading-none mt-1 tracking-[0.3em] uppercase">AI Trading & Investment</div>
         </div>
       </div>
       <div className="flex items-center gap-2">

@@ -36,7 +36,7 @@ export default function LoginPage() {
           Vaelor
         </div>
         <div className="text-[11px] text-muted tracking-[.18em] uppercase mt-2">
-          AI · Portfolio · Agent
+          AI · Trading · Investment
         </div>
       </div>
 
