@@ -13,6 +13,7 @@ export default function SettingsPage() {
   const [apKey, setApKey] = useState("");
   const [apSec, setApSec] = useState("");
   const [autoT, setAutoT] = useState(false);
+  const [smartStops, setSmartStops] = useState(false);
   const [pw, setPw] = useState("");
   const [pw2, setPw2] = useState("");
   const [msg, setMsg] = useState("");
@@ -32,6 +33,7 @@ export default function SettingsPage() {
     setApKey(j.user.alpaca_key ?? "");
     setApSec(j.user.alpaca_secret ? "•••••••••••" : "");
     setAutoT(!!j.user.auto_trade);
+    setSmartStops(!!j.user.smart_stops);
     const nj = await fetch("/api/notifications").then(r => r.json());
     setRecent(nj.recent ?? []);
   }
@@ -42,6 +44,7 @@ export default function SettingsPage() {
       ntfy_topic: ntfy, discord_webhook: disc,
       ml_alerts: mlOn, ml_threshold: mlThr,
       alpaca_key: apKey, auto_trade: autoT,
+      smart_stops: smartStops,
     };
     // Only send secret if user typed a new one (not the masked value)
     if (apSec && !apSec.startsWith("•")) body.alpaca_secret = apSec;
@@ -146,7 +149,17 @@ export default function SettingsPage() {
         <label className="flex items-center gap-2 mt-4 text-sm cursor-pointer">
           <input type="checkbox" checked={autoT} onChange={e => setAutoT(e.target.checked)}
                  className="accent-mint" />
-          <span className="text-ink">Enable auto-trade (executes sells via Alpaca on signal)</span>
+          <span className="text-ink">Enable auto-trade (sells on stop/target/ML, buys on bullish ML)</span>
+        </label>
+        <label className="flex items-start gap-2 mt-3 text-sm cursor-pointer">
+          <input type="checkbox" checked={smartStops} onChange={e => setSmartStops(e.target.checked)}
+                 className="accent-mint mt-0.5" />
+          <span>
+            <span className="text-ink font-semibold">Smart stops</span> — let the bot pick stop-loss & take-profit per stock based on its volatility (ATR), instead of fixed percentages.
+            <span className="block text-muted text-[11px] mt-0.5 leading-relaxed">
+              When buying, sliders are overridden. High-volatility names get wider stops; calm names get tight ones. ML signal still notifies you.
+            </span>
+          </span>
         </label>
         {pingRes && (
           <div className={`mt-3 text-xs p-3 rounded-lg font-mono ${pingRes.ok ? "bg-mint/10 text-mint" : "bg-red/10 text-red"}`}>

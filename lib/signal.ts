@@ -53,6 +53,33 @@ export function computeSignal(candles: Candle[]): Signal | null {
 
 function avg(arr: number[]) { return arr.reduce((a, b) => a + b, 0) / arr.length; }
 
+/**
+ * Smart stop-loss / take-profit from price action.
+ * Uses 14-period Average True Range (ATR) — the standard measure of volatility.
+ * - stop_loss  = 2 × ATR below entry  (volatility-adjusted "noise floor")
+ * - take_profit = 4 × ATR above entry (2:1 reward-to-risk default)
+ * Floors at 3% / 6% so penny-stock ATR doesn't make stops absurdly tight.
+ * Returns FRACTIONS, e.g. { stop_loss: 0.07, take_profit: 0.14 }.
+ */
+export function computeSmartStops(candles: Candle[]): { stop_loss: number; take_profit: number } | null {
+  if (candles.length < 15) return null;
+  const recent = candles.slice(-15);
+  let trSum = 0;
+  for (let i = 1; i < recent.length; i++) {
+    const h = recent[i].h, l = recent[i].l, prevC = recent[i - 1].c;
+    const tr = Math.max(h - l, Math.abs(h - prevC), Math.abs(l - prevC));
+    trSum += tr;
+  }
+  const atr = trSum / (recent.length - 1);
+  const lastPrice = recent[recent.length - 1].c;
+  if (!lastPrice || atr <= 0) return null;
+  const volPct = atr / lastPrice;       // ATR as % of price
+  return {
+    stop_loss:   Math.max(2 * volPct, 0.03),
+    take_profit: Math.max(4 * volPct, 0.06),
+  };
+}
+
 function computeRSI(closes: number[], period = 14): number {
   if (closes.length < period + 1) return 50;
   let gains = 0, losses = 0;

@@ -153,8 +153,15 @@ function QuoteCard({ q, positions, cash, onTrade, onMsg }: {
   const cost = qty * q.price;
   const inPort = positions.find(p => p.ticker === q.ticker);
 
+  const [smart, setSmart] = useState<{ stop_loss: number; take_profit: number } | null>(null);
+  const [smartOn, setSmartOn] = useState(false);
+
   useEffect(() => {
     fetch(`/api/chart/${q.ticker}?range=1mo`).then(r => r.json()).then(j => setChart(j.data ?? []));
+    fetch(`/api/auth/me`).then(r => r.json()).then(j => setSmartOn(!!j.user?.smart_stops));
+    fetch(`/api/smart-stops/${q.ticker}`).then(r => r.json()).then(j => {
+      if (!j.error) setSmart(j);
+    });
   }, [q.ticker]);
 
   async function buy() {
@@ -207,7 +214,20 @@ function QuoteCard({ q, positions, cash, onTrade, onMsg }: {
           <label className="label">Shares</label>
           <input type="number" className="input" min={1} value={qty}
                  onChange={e => setQty(Math.max(1, Number(e.target.value)))} />
-          <div className="grid grid-cols-2 gap-3 mt-3">
+          {smartOn && smart ? (
+            <div className="mt-3 p-3 bg-mint/8 border border-mint/25 rounded-lg text-[12px]">
+              <div className="text-mint font-semibold mb-1.5">🧠 Smart stops on — bot is picking:</div>
+              <div className="font-mono text-ink2">
+                Stop-loss: <span className="text-red">−{(smart.stop_loss * 100).toFixed(1)}%</span>
+                {"  ·  "}
+                Take-profit: <span className="text-mint">+{(smart.take_profit * 100).toFixed(1)}%</span>
+              </div>
+              <div className="text-muted text-[10px] mt-1">
+                Based on this stock's 14-day ATR (volatility). Sliders below are ignored.
+              </div>
+            </div>
+          ) : null}
+          <div className={`grid grid-cols-2 gap-3 mt-3 ${smartOn && smart ? "opacity-40 pointer-events-none" : ""}`}>
             <div>
               <label className="label">Stop Loss: {sl}%</label>
               <input type="range" min={1} max={30} value={sl}

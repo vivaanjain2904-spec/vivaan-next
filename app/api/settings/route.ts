@@ -6,7 +6,7 @@ export async function POST(req: Request) {
   const s = await requireSession();
   const {
     ntfy_topic, discord_webhook, ml_alerts, ml_threshold,
-    alpaca_key, alpaca_secret, auto_trade,
+    alpaca_key, alpaca_secret, auto_trade, smart_stops,
   } = await req.json();
   await sql`UPDATE users SET
     ntfy_topic      = ${ntfy_topic ? String(ntfy_topic).trim() : null},
@@ -15,7 +15,8 @@ export async function POST(req: Request) {
     ml_threshold    = ${Number(ml_threshold) || 0.65},
     alpaca_key      = ${alpaca_key    ? String(alpaca_key).trim()    : null},
     alpaca_secret   = ${alpaca_secret ? String(alpaca_secret).trim() : null},
-    auto_trade      = ${!!auto_trade}
+    auto_trade      = ${!!auto_trade},
+    smart_stops     = ${!!smart_stops}
     WHERE id=${s.uid}`;
   return NextResponse.json({ ok: true });
 }
