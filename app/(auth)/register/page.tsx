@@ -47,8 +47,13 @@ export default function RegisterPage() {
             <input type="password" className="input" value={pw2}
                    onChange={e => setPw2(e.target.value)} placeholder="again" required /></div>
           <div><label className="label">Starting Paper Cash ($)</label>
-            <input type="number" className="input" value={cash}
-                   onChange={e => setCash(Number(e.target.value))} step={10000} min={1000} /></div>
+            <input type="number" className="input font-mono" value={cash}
+                   onChange={e => setCash(Math.max(0, Number(e.target.value) || 0))}
+                   step={1000} min={0} placeholder="any amount" />
+            <div className="text-muted text-[11px] mt-1">
+              Any value — $100, $1M, $1B. It's paper money.
+            </div>
+          </div>
           {err && <div className="text-red text-xs">{err}</div>}
           <button disabled={busy} className="btn-mint w-full mt-3">
             {busy ? "…" : "Create Account →"}

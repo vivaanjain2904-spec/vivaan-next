@@ -90,9 +90,11 @@ export default function SettingsPage() {
     setMsg(r.ok ? "Password updated" : "Failed"); setPw(""); setPw2("");
   }
   async function resetAccount() {
-    if (!confirm("Wipe all positions/trades and reset cash to $100,000?")) return;
-    await fetch("/api/settings?cash=100000", { method: "DELETE" });
-    setMsg("Account reset"); load();
+    const input = prompt("Wipe all positions/trades and reset cash to what amount? (any number)", "100000");
+    if (input === null) return;
+    const amount = Math.max(0, Number(input) || 0);
+    await fetch(`/api/settings?cash=${amount}`, { method: "DELETE" });
+    setMsg(`Account reset to ${fp(amount)}`); load();
   }
   async function signOut() {
     await fetch("/api/auth/logout", { method: "POST" });
