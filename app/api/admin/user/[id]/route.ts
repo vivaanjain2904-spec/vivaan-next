@@ -4,7 +4,8 @@ import { requireAdmin } from "@/lib/auth";
 
 /** PATCH { is_admin?: bool, reset_cash?: number } — promote/demote OR reset their account. */
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
-  try { await requireAdmin(); }
+  let admin;
+  try { admin = await requireAdmin(); }
   catch (e: any) { return e instanceof Response ? e : NextResponse.json({ error: String(e) }, { status: 500 }); }
 
   const uid = parseInt(params.id, 10);
@@ -12,6 +13,10 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
 
   const body = await req.json().catch(() => ({}));
   if (typeof body.is_admin === "boolean") {
+    // Guard: refuse to demote yourself
+    if (uid === admin.uid && body.is_admin === false) {
+      return NextResponse.json({ error: "Can't demote yourself." }, { status: 400 });
+    }
     await sql`UPDATE users SET is_admin=${body.is_admin} WHERE id=${uid}`;
   }
   if (typeof body.reset_cash === "number") {

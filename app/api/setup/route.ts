@@ -13,14 +13,12 @@ export async function GET() {
     const r = await sql`SELECT COUNT(*)::int AS n FROM users`;
     const userCount = (r.rows[0] as any).n;
     if (userCount === 0) {
+      // First-ever setup: create demo user as admin so someone can log in.
       const hash = await hashPassword("vivaan");
       await sql`INSERT INTO users (name, pw_hash, cash, is_admin)
         VALUES ('Vivaan', ${hash}, 100000, TRUE)`;
-    } else {
-      // Ensure Vivaan (or the first user) is admin even on existing DBs
-      await sql`UPDATE users SET is_admin = TRUE
-        WHERE id = (SELECT id FROM users ORDER BY id LIMIT 1)`;
     }
+    // Otherwise leave existing roles alone — admins manage admins from the dashboard.
     return NextResponse.json({
       ok: true,
       tables_created: true,
