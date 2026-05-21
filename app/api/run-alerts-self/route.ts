@@ -4,7 +4,9 @@ import { requireSession } from "@/lib/auth";
 import { getQuotes, getChart } from "@/lib/yfinance";
 import { computeSignal } from "@/lib/signal";
 import { alertUser } from "@/lib/ntfy";
-import { alpacaSell } from "@/lib/alpaca";
+import { alpacaSell, alpacaBuy } from "@/lib/alpaca";
+
+const AUTO_BUY_SIZE_USD = 500;   // $ per auto-buy
 
 export const maxDuration = 30;
 
@@ -119,10 +121,64 @@ export async function POST() {
     }
   }
 
+  // ──────────────────────────────────────────────────────────
+  //  AUTO-BUY: strong bullish ML signal on a watchlist stock
+  // ──────────────────────────────────────────────────────────
+  const heldSet = new Set(positions.map(p => p.ticker));
+  if (user.auto_trade && user.alpaca_key && user.alpaca_secret) {
+    const cashR = await sql`SELECT cash FROM users WHERE id=${user.id}`;
+    let cash = Number(cashR.rows[0]?.cash ?? 0);
+    const buySignalThr = 1 - Number(user.ml_threshold);   // e.g. 0.35 by default
+
+    for (const w of watch) {
+      if (heldSet.has(w.ticker)) continue;                 // already own it
+      const prob = ml[w.ticker];
+      if (prob == null || prob > buySignalThr) continue;   // not a strong buy
+      const q = quotes[w.ticker]; if (!q?.price) continue;
+      const qty = Math.floor(AUTO_BUY_SIZE_USD / q.price);
+      if (qty < 1) continue;
+      const cost = qty * q.price;
+      if (cost > cash) continue;
+
+      // Only fire once per "buy window"
+      if (!(await transition(w.ticker, "ml_buy", true))) continue;
+
+      const r = await alpacaBuy(
+        { key: user.alpaca_key, secret: user.alpaca_secret }, w.ticker, qty);
+      if (r.ok) {
+        try {
+          await sql`INSERT INTO positions (user_id, ticker, qty, avg_cost, stop_loss, take_profit)
+            VALUES (${user.id}, ${w.ticker}, ${qty}, ${q.price}, 0.05, 0.10)
+            ON CONFLICT (user_id, ticker) DO NOTHING`;
+          await sql`UPDATE users SET cash = cash - ${cost} WHERE id=${user.id}`;
+          await sql`INSERT INTO trades (user_id, ticker, side, qty, price)
+            VALUES (${user.id}, ${w.ticker}, 'BUY', ${qty}, ${q.price})`;
+          cash -= cost;
+        } catch {}
+        orders.push({ ticker: w.ticker, ok: true, side: "BUY", orderId: r.orderId,
+                      qty, price: q.price, reason: `ML buy signal (${(prob*100).toFixed(0)}%)` });
+        const title = `🤖 Auto-bought ${qty} ${w.ticker}`;
+        const body  = `ML drop-prob ${(prob*100).toFixed(0)}% — strong buy. Order ${r.orderId}. Cost $${cost.toFixed(2)}.`;
+        await sql`INSERT INTO notifications (user_id, ticker, kind, title, body)
+          VALUES (${user.id}, ${w.ticker}, 'auto_buy', ${title}, ${body})`;
+        await alertUser(user, title, body);
+      } else {
+        orders.push({ ticker: w.ticker, ok: false, side: "BUY", error: r.error });
+      }
+    }
+    // Reset ml_buy state once signal flips back above threshold so we can buy again later
+    for (const w of watch) {
+      const prob = ml[w.ticker];
+      if (prob != null && prob > buySignalThr) await transition(w.ticker, "ml_buy", false);
+    }
+  }
+
   return NextResponse.json({
     ok: true,
     checked: tickers.length,
     breaches, orders,
-    msg: breaches.length ? `${breaches.length} alert(s) tripped.` : "No alerts tripped — all positions within range.",
+    msg: breaches.length || orders.length
+      ? `${breaches.length} alert(s), ${orders.length} order(s) executed.`
+      : "No alerts tripped — all positions within range.",
   });
 }

@@ -14,25 +14,29 @@ function headers(c: Creds) {
   };
 }
 
-export async function alpacaSell(
-  c: Creds, symbol: string, qty: number,
-): Promise<{ ok: boolean; orderId?: string; error?: string }> {
+async function _order(c: Creds, symbol: string, qty: number, side: "buy" | "sell") {
   try {
     const r = await fetch(`${PAPER_BASE}/v2/orders`, {
       method: "POST",
       headers: headers(c),
       body: JSON.stringify({
-        symbol, qty: String(qty), side: "sell",
+        symbol, qty: String(qty), side,
         type: "market", time_in_force: "day",
       }),
     });
     const j = await r.json();
-    if (!r.ok) return { ok: false, error: j.message ?? `HTTP ${r.status}` };
-    return { ok: true, orderId: j.id };
+    if (!r.ok) return { ok: false as const, error: j.message ?? `HTTP ${r.status}` };
+    return { ok: true as const, orderId: j.id as string };
   } catch (e: any) {
-    return { ok: false, error: String(e?.message ?? e) };
+    return { ok: false as const, error: String(e?.message ?? e) };
   }
 }
+
+export const alpacaSell = (c: Creds, symbol: string, qty: number) =>
+  _order(c, symbol, qty, "sell");
+
+export const alpacaBuy = (c: Creds, symbol: string, qty: number) =>
+  _order(c, symbol, qty, "buy");
 
 export async function alpacaPing(c: Creds): Promise<{ ok: boolean; account?: any; error?: string }> {
   try {
