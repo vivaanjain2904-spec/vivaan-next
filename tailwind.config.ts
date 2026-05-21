@@ -16,6 +16,8 @@ export default {
         muted:   "#71717a",
         mint:    "#34d399",
         mintd:   "#10b981",
+        vaelor:  "#1f7a52",
+        vaelord: "#185f40",
         red:     "#f87171",
         redd:    "#ef4444",
         amber:   "#fbbf24",

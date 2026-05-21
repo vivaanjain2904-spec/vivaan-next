@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import Logo from "@/components/Logo";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -23,45 +24,80 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="max-w-md mx-auto pt-12 px-6">
-      <div className="text-center pb-10">
-        <div className="mx-auto w-28 h-28 rounded-full border border-mint/30 flex items-center justify-center mb-6 animate-pulse-glow"
-             style={{ background: "radial-gradient(circle, rgba(63,245,160,0.08), transparent 70%)" }}>
-          <div className="w-2 h-2 bg-mint rounded-full shadow-glow" />
-        </div>
-        <div className="text-xl font-extrabold tracking-[.28em] uppercase"
-             style={{ background: "linear-gradient(135deg,#3ff5a0,#22c46e)",
-                      WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent",
-                      filter: "drop-shadow(0 0 22px rgba(63,245,160,.5))" }}>
-          Vaelor
-        </div>
-        <div className="text-[11px] text-muted tracking-[.18em] uppercase mt-2">
-          AI · Trading · Investment
+    <div className="min-h-screen grid grid-rows-[auto_1fr_auto]">
+      <div className="flex justify-between items-center px-10 py-5 border-b border-border1
+                      text-[9px] tracking-[0.3em] uppercase text-muted/60">
+        <span>Vaelor</span>
+        <span>Secure Client Portal · TLS 1.3</span>
+      </div>
+
+      <div className="flex items-center justify-center px-6">
+        <div className="w-full max-w-[360px] flex flex-col gap-16">
+          <Logo size="lg" showTagline />
+
+          <form onSubmit={onSubmit} className="flex flex-col">
+            <Field label="Username">
+              <input
+                className="auth-input"
+                value={name}
+                onChange={e => setName(e.target.value)}
+                autoFocus
+                required
+              />
+            </Field>
+            <Field label="Passphrase">
+              <input
+                type="password"
+                className="auth-input"
+                value={pw}
+                onChange={e => setPw(e.target.value)}
+                required
+              />
+            </Field>
+
+            {err && (
+              <div className="text-red text-[11px] tracking-wider uppercase mt-1 mb-3">
+                {err}
+              </div>
+            )}
+
+            <button
+              disabled={busy}
+              className="mt-5 border border-vaelor text-vaelor py-3 text-[10px] font-medium
+                         tracking-[0.4em] uppercase transition-colors
+                         hover:bg-vaelor hover:text-bg disabled:opacity-50"
+              style={{ textIndent: "0.4em" }}
+            >
+              {busy ? "Authenticating…" : "Authenticate"}
+            </button>
+
+            <div className="flex justify-between text-[9px] tracking-[0.25em] uppercase
+                            text-white/30 mt-5">
+              <Link href="/register" className="text-white/50 hover:text-vaelor transition-colors">
+                Request access
+              </Link>
+              <span>Authorized use only</span>
+            </div>
+          </form>
         </div>
       </div>
 
-      <div className="panel-glow">
-        <div className="section-h">Sign In</div>
-        <form onSubmit={onSubmit} className="space-y-3">
-          <div>
-            <label className="label">Username</label>
-            <input className="input" value={name} onChange={e => setName(e.target.value)}
-                   placeholder="your username" autoFocus required />
-          </div>
-          <div>
-            <label className="label">Password</label>
-            <input type="password" className="input" value={pw} onChange={e => setPw(e.target.value)}
-                   placeholder="••••••••" required />
-          </div>
-          {err && <div className="text-red text-xs">{err}</div>}
-          <button disabled={busy} className="btn-mint w-full mt-3">
-            {busy ? "…" : "Sign In →"}
-          </button>
-        </form>
-        <p className="text-[11px] text-muted text-center mt-4">
-          New here? <Link href="/register" className="text-mint hover:underline">Create an account</Link>
-        </p>
+      <div className="flex justify-between items-center px-10 py-5 border-t border-border1
+                      text-[9px] tracking-[0.3em] uppercase text-muted/60">
+        <span>© MMXXVI Vaelor Capital</span>
+        <span>v1.0</span>
       </div>
+    </div>
+  );
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex flex-col mb-6">
+      <div className="text-[8.5px] tracking-[0.35em] uppercase text-white/35 mb-2">
+        {label}
+      </div>
+      {children}
     </div>
   );
 }

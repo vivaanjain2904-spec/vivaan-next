@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import Logo from "@/components/Logo";
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -26,43 +27,101 @@ export default function RegisterPage() {
   }
 
   return (
-    <div className="max-w-md mx-auto pt-12 px-6">
-      <div className="text-center pb-8">
-        <div className="text-xl font-extrabold tracking-[.28em] uppercase"
-             style={{ background: "linear-gradient(135deg,#3ff5a0,#22c46e)",
-                      WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
-          Vaelor
+    <div className="min-h-screen grid grid-rows-[auto_1fr_auto]">
+      <div className="flex justify-between items-center px-10 py-5 border-b border-border1
+                      text-[9px] tracking-[0.3em] uppercase text-muted/60">
+        <span>Vaelor</span>
+        <span>Account Onboarding</span>
+      </div>
+
+      <div className="flex items-center justify-center px-6 py-10">
+        <div className="w-full max-w-[360px] flex flex-col gap-12">
+          <Logo size="lg" showTagline />
+
+          <form onSubmit={onSubmit} className="flex flex-col">
+            <Field label="Username">
+              <input
+                className="auth-input"
+                value={name}
+                onChange={e => setName(e.target.value)}
+                required
+              />
+            </Field>
+            <Field label="Passphrase">
+              <input
+                type="password"
+                className="auth-input"
+                value={pw}
+                onChange={e => setPw(e.target.value)}
+                required
+              />
+            </Field>
+            <Field label="Confirm Passphrase">
+              <input
+                type="password"
+                className="auth-input"
+                value={pw2}
+                onChange={e => setPw2(e.target.value)}
+                required
+              />
+            </Field>
+            <Field label="Starting Paper Capital (USD)">
+              <input
+                type="number"
+                className="auth-input font-mono"
+                value={cash}
+                onChange={e => setCash(Math.max(0, Number(e.target.value) || 0))}
+                step={1000}
+                min={0}
+              />
+              <div className="text-white/30 text-[9px] tracking-[0.2em] uppercase mt-2">
+                Any amount · paper money only
+              </div>
+            </Field>
+
+            {err && (
+              <div className="text-red text-[11px] tracking-wider uppercase mt-1 mb-3">
+                {err}
+              </div>
+            )}
+
+            <button
+              disabled={busy}
+              className="mt-5 border border-vaelor text-vaelor py-3 text-[10px] font-medium
+                         tracking-[0.4em] uppercase transition-colors
+                         hover:bg-vaelor hover:text-bg disabled:opacity-50"
+              style={{ textIndent: "0.4em" }}
+            >
+              {busy ? "Provisioning…" : "Create Account"}
+            </button>
+
+            <div className="flex justify-between text-[9px] tracking-[0.25em] uppercase
+                            text-white/30 mt-5">
+              <Link href="/login" className="text-white/50 hover:text-vaelor transition-colors">
+                Already have access
+              </Link>
+              <span>Authorized use only</span>
+            </div>
+          </form>
         </div>
       </div>
-      <div className="panel-glow">
-        <div className="section-h">Create Account</div>
-        <form onSubmit={onSubmit} className="space-y-3">
-          <div><label className="label">Username</label>
-            <input className="input" value={name} onChange={e => setName(e.target.value)}
-                   placeholder="alex" required /></div>
-          <div><label className="label">Password</label>
-            <input type="password" className="input" value={pw}
-                   onChange={e => setPw(e.target.value)} placeholder="min 4 chars" required /></div>
-          <div><label className="label">Confirm Password</label>
-            <input type="password" className="input" value={pw2}
-                   onChange={e => setPw2(e.target.value)} placeholder="again" required /></div>
-          <div><label className="label">Starting Paper Cash ($)</label>
-            <input type="number" className="input font-mono" value={cash}
-                   onChange={e => setCash(Math.max(0, Number(e.target.value) || 0))}
-                   step={1000} min={0} placeholder="any amount" />
-            <div className="text-muted text-[11px] mt-1">
-              Any value — $100, $1M, $1B. It's paper money.
-            </div>
-          </div>
-          {err && <div className="text-red text-xs">{err}</div>}
-          <button disabled={busy} className="btn-mint w-full mt-3">
-            {busy ? "…" : "Create Account →"}
-          </button>
-        </form>
-        <p className="text-[11px] text-muted text-center mt-4">
-          Have an account? <Link href="/login" className="text-mint hover:underline">Sign in</Link>
-        </p>
+
+      <div className="flex justify-between items-center px-10 py-5 border-t border-border1
+                      text-[9px] tracking-[0.3em] uppercase text-muted/60">
+        <span>© MMXXVI Vaelor Capital</span>
+        <span>v1.0</span>
       </div>
+    </div>
+  );
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex flex-col mb-6">
+      <div className="text-[8.5px] tracking-[0.35em] uppercase text-white/35 mb-2">
+        {label}
+      </div>
+      {children}
     </div>
   );
 }

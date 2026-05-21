@@ -11,6 +11,10 @@
   background-clip: text;
   filter: drop-shadow(0 0 22px rgba(52,211,153,0.35));
 }
+.font-vaelor-mark {
+  font-family: 'Cinzel', serif;
+  font-weight: 500;
+}
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -69,6 +73,13 @@
   }
   .label {
     @apply block text-[11px] font-semibold text-muted mb-1.5;
+  }
+
+  /* Auth pages — hairline-underline input (institutional portal style) */
+  .auth-input {
+    @apply w-full bg-transparent border-0 border-b border-white/10
+      text-ink text-[13px] tracking-wide py-2
+      focus:outline-none focus:border-vaelor transition-colors;
   }
 
   /* Pills */

@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { fp } from "@/lib/format";
 import MarketStatus from "./MarketStatus";
+import Logo from "./Logo";
 
 type Me = { name: string; cash: number } | null;
 
@@ -49,15 +50,7 @@ export default function Header() {
   if (!me) return null;
   return (
     <header className="flex items-center justify-between py-4 mb-6 border-b border-border1">
-      <div className="flex items-center gap-2.5">
-        <div className="w-7 h-7 rounded-md bg-mint/15 border border-mint/30 flex items-center justify-center">
-          <span className="text-mint text-[15px] font-bold leading-none">V</span>
-        </div>
-        <div>
-          <div className="font-vaelor text-[20px] leading-none">VAELOR</div>
-          <div className="text-[9px] text-muted leading-none mt-1 tracking-[0.3em] uppercase">AI Trading & Investment</div>
-        </div>
-      </div>
+      <Logo size="sm" showTagline />
       <div className="flex items-center gap-2">
         <MarketStatus />
         <span className="pill-muted font-mono">{fp(me.cash)}</span>
