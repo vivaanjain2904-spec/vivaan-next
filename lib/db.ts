@@ -5,7 +5,11 @@ import { neon } from "@neondatabase/serverless";
 let _sql: any = null;
 function _client() {
   if (_sql) return _sql;
-  const URL = process.env.POSTGRES_URL || process.env.DATABASE_URL;
+  const URL =
+    process.env.POSTGRES_URL ||
+    process.env.STORAGE_POSTGRES_URL ||
+    process.env.STORAGE_DATABASE_URL ||
+    process.env.DATABASE_URL;
   if (!URL) throw new Error("POSTGRES_URL not set — connect Vercel Postgres in Storage tab");
   _sql = neon(URL);
   return _sql;
