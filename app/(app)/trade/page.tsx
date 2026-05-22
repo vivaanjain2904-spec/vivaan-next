@@ -324,9 +324,15 @@ function QuoteCard({ q, positions, cash, onTrade, onMsg }: {
                 ].join(" ")}>{rec.volatility_class} vol</span>
               </div>
               <div className="font-mono text-sm text-ink2 space-x-3 mb-1.5">
-                <span>Stop <span className="text-red">−{(rec.stop_loss * 100).toFixed(1)}%</span></span>
+                <span>
+                  Stop <span className="text-red">−{(rec.stop_loss * 100).toFixed(1)}%</span>
+                  <span className="text-muted"> ({fp(q.price * (1 - rec.stop_loss))})</span>
+                </span>
                 <span className="text-muted">·</span>
-                <span>Target <span className="text-mint">+{(rec.take_profit * 100).toFixed(1)}%</span></span>
+                <span>
+                  Target <span className="text-mint">+{(rec.take_profit * 100).toFixed(1)}%</span>
+                  <span className="text-muted"> ({fp(q.price * (1 + rec.take_profit))})</span>
+                </span>
                 <span className="text-muted">·</span>
                 <span>Review in <span className="text-ink">{rec.review_days}d</span></span>
               </div>
@@ -334,19 +340,18 @@ function QuoteCard({ q, positions, cash, onTrade, onMsg }: {
             </div>
             <button
               onClick={applyRecommendation}
-              disabled={recApplied || (smartOn && !!smart)}
+              disabled={recApplied}
               className={[
                 "btn text-[12px] px-4 py-2.5 whitespace-nowrap",
                 recApplied ? "bg-mint/15 text-mint border border-mint/30 cursor-default"
                            : "bg-accent/15 text-accent border border-accent/30 hover:bg-accent/25",
-                (smartOn && smart) ? "opacity-50 cursor-not-allowed" : "",
               ].join(" ")}>
               {recApplied ? "✓ Applied" : "✨ Apply Recommendation"}
             </button>
           </div>
           {smartOn && smart && (
             <div className="mt-2 text-[11px] text-muted">
-              Smart stops is on globally, so it's overriding any manual setup. Turn it off in Settings to use this recommendation instead.
+              Smart Stops is also on globally — it uses the same ATR math, so SL/TP values match the recommendation. Applying still queues the {rec.review_days}-day review window.
             </div>
           )}
         </div>
