@@ -5,12 +5,13 @@ import { requireSession, hashPassword } from "@/lib/auth";
 export async function POST(req: Request) {
   const s = await requireSession();
   const {
-    ntfy_topic, discord_webhook, ml_alerts, ml_threshold,
+    ntfy_topic, discord_webhook, email, ml_alerts, ml_threshold,
     alpaca_key, alpaca_secret, auto_trade, smart_stops, auto_buy_size,
   } = await req.json();
   await sql`UPDATE users SET
     ntfy_topic      = ${ntfy_topic ? String(ntfy_topic).trim() : null},
     discord_webhook = ${discord_webhook ? String(discord_webhook).trim() : null},
+    email           = ${email ? String(email).trim().toLowerCase() : null},
     ml_alerts       = ${!!ml_alerts},
     ml_threshold    = ${Number(ml_threshold) || 0.65},
     alpaca_key      = ${alpaca_key    ? String(alpaca_key).trim()    : null},

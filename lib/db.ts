@@ -44,6 +44,7 @@ export async function initDb() {
   try { await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT FALSE`; } catch {}
   try { await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS smart_stops BOOLEAN NOT NULL DEFAULT FALSE`; } catch {}
   try { await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS auto_buy_size DOUBLE PRECISION NOT NULL DEFAULT 500`; } catch {}
+  try { await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS email TEXT`; } catch {}
   await sql`CREATE TABLE IF NOT EXISTS positions (
     user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
     ticker  TEXT NOT NULL,

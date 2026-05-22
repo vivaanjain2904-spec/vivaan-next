@@ -8,6 +8,7 @@ export default function SettingsPage() {
   const [user, setUser] = useState<any>(null);
   const [ntfy, setNtfy] = useState("");
   const [disc, setDisc] = useState("");
+  const [email, setEmail] = useState("");
   const [mlOn, setMlOn] = useState(true);
   const [mlThr, setMlThr] = useState(0.65);
   const [apKey, setApKey] = useState("");
@@ -29,6 +30,7 @@ export default function SettingsPage() {
     setUser(j.user);
     setNtfy(j.user.ntfy_topic ?? "");
     setDisc(j.user.discord_webhook ?? "");
+    setEmail(j.user.email ?? "");
     setMlOn(!!j.user.ml_alerts);
     setMlThr(Number(j.user.ml_threshold ?? 0.65));
     setApKey(j.user.alpaca_key ?? "");
@@ -43,7 +45,7 @@ export default function SettingsPage() {
 
   async function saveSettings() {
     const body: any = {
-      ntfy_topic: ntfy, discord_webhook: disc,
+      ntfy_topic: ntfy, discord_webhook: disc, email,
       ml_alerts: mlOn, ml_threshold: mlThr,
       alpaca_key: apKey, auto_trade: autoT,
       smart_stops: smartStops,
@@ -122,6 +124,14 @@ export default function SettingsPage() {
         <label className="label mt-3">Discord webhook (optional)</label>
         <input className="input font-mono text-xs" value={disc} onChange={e => setDisc(e.target.value)}
                placeholder="https://discord.com/api/webhooks/…" />
+        <label className="label mt-3">Email (optional)</label>
+        <input type="email" className="input font-mono text-xs" value={email}
+               onChange={e => setEmail(e.target.value)}
+               placeholder="you@example.com" autoComplete="email" />
+        <div className="text-muted text-[11px] mt-1.5 leading-relaxed">
+          Alerts also delivered by email. Sent from <span className="font-mono">onboarding@resend.dev</span> by default —
+          verify <span className="font-mono">vaelor.dev</span> in your Resend dashboard to send from a custom address.
+        </div>
         <label className="flex items-center gap-2 mt-4 text-sm cursor-pointer">
           <input type="checkbox" checked={mlOn} onChange={e => setMlOn(e.target.checked)}
                  className="accent-mint" />
@@ -194,7 +204,9 @@ export default function SettingsPage() {
       {/* Save bar */}
       <div className="flex gap-2 mb-3 flex-wrap">
         <button onClick={saveSettings} className="btn-mint flex-1 min-w-[200px]">💾 Save All Settings</button>
-        {user.ntfy_topic && <button onClick={testNotify} className="btn-ghost">📱 Test Phone</button>}
+        {(user.ntfy_topic || user.discord_webhook || user.email) && (
+          <button onClick={testNotify} className="btn-ghost">📨 Test Notification</button>
+        )}
         {(user.alpaca_key && user.alpaca_secret) && (
           <button onClick={pingAlpaca} className="btn-ghost">🔌 Test Alpaca</button>
         )}
