@@ -6,7 +6,7 @@ import { getQuotes } from "@/lib/yfinance";
 export async function GET() {
   const s = await requireSession();
   const [posR, userR, wlR, mlR] = await Promise.all([
-    sql`SELECT ticker, qty, avg_cost, stop_loss, take_profit
+    sql`SELECT ticker, qty, avg_cost, stop_loss, take_profit, review_at
         FROM positions WHERE user_id=${s.uid} AND qty>0 ORDER BY ticker`,
     sql`SELECT cash, ml_alerts, ml_threshold FROM users WHERE id=${s.uid}`,
     sql`SELECT ticker, alert_above, alert_below, ml_alert

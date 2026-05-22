@@ -227,13 +227,34 @@ function QuoteCard({ q, positions, cash, onTrade, onMsg }: {
   const [smart, setSmart] = useState<{ stop_loss: number; take_profit: number } | null>(null);
   const [smartOn, setSmartOn] = useState(false);
 
+  // Recommendation engine: per-stock SL/TP + suggested review window
+  type Rec = { stop_loss: number; take_profit: number; review_days: number;
+               volatility_class: "low" | "moderate" | "high"; atr_pct: number; rationale: string };
+  const [rec, setRec] = useState<Rec | null>(null);
+  const [recApplied, setRecApplied] = useState(false);
+  const [reviewDays, setReviewDays] = useState(0); // 0 = no review window
+
   useEffect(() => {
     fetch(`/api/chart/${q.ticker}?range=1mo`).then(r => r.json()).then(j => setChart(j.data ?? []));
     fetch(`/api/auth/me`).then(r => r.json()).then(j => setSmartOn(!!j.user?.smart_stops));
     fetch(`/api/smart-stops/${q.ticker}`).then(r => r.json()).then(j => {
       if (!j.error) setSmart(j);
     });
+    fetch(`/api/recommend/${q.ticker}`).then(r => r.json()).then(j => {
+      if (!j.error) setRec(j);
+    });
+    // Reset "applied" indicator when picking a new ticker
+    setRecApplied(false);
+    setReviewDays(0);
   }, [q.ticker]);
+
+  function applyRecommendation() {
+    if (!rec) return;
+    setSl(Math.round(rec.stop_loss * 100));
+    setTp(Math.round(rec.take_profit * 100));
+    setReviewDays(rec.review_days);
+    setRecApplied(true);
+  }
 
   async function buy() {
     setBusy(true);
@@ -242,7 +263,11 @@ function QuoteCard({ q, positions, cash, onTrade, onMsg }: {
     const actualTp = smartOn && smart ? smart.take_profit : tp / 100;
     const r = await fetch("/api/trade", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ side: "BUY", ticker: q.ticker, qty, stop_loss: actualSl, take_profit: actualTp }),
+      body: JSON.stringify({
+        side: "BUY", ticker: q.ticker, qty,
+        stop_loss: actualSl, take_profit: actualTp,
+        review_days: reviewDays || undefined,
+      }),
     });
     const j = await r.json(); setBusy(false);
     onMsg({ ok: r.ok, text: j.msg ?? j.error ?? "Done" });
@@ -279,6 +304,51 @@ function QuoteCard({ q, positions, cash, onTrade, onMsg }: {
       {chart.length > 0 && (
         <div className="panel mb-5">
           <Chart data={chart} height={240} mode="area" />
+        </div>
+      )}
+
+      {/* ── Recommendation card (one-click setup) ── */}
+      {rec && (
+        <div className="panel mb-5 border-l-2 border-l-accent">
+          <div className="flex items-start justify-between gap-4 flex-wrap">
+            <div className="flex-1 min-w-[260px]">
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-[15px]">💡</span>
+                <span className="text-[12px] font-bold uppercase tracking-wider text-accent">
+                  Recommended Setup
+                </span>
+                <span className={[
+                  "pill text-[10px]",
+                  rec.volatility_class === "high"     ? "pill-red"  :
+                  rec.volatility_class === "moderate" ? "pill-muted" : "pill-mint",
+                ].join(" ")}>{rec.volatility_class} vol</span>
+              </div>
+              <div className="font-mono text-sm text-ink2 space-x-3 mb-1.5">
+                <span>Stop <span className="text-red">−{(rec.stop_loss * 100).toFixed(1)}%</span></span>
+                <span className="text-muted">·</span>
+                <span>Target <span className="text-mint">+{(rec.take_profit * 100).toFixed(1)}%</span></span>
+                <span className="text-muted">·</span>
+                <span>Review in <span className="text-ink">{rec.review_days}d</span></span>
+              </div>
+              <div className="text-muted text-[11px]">{rec.rationale}</div>
+            </div>
+            <button
+              onClick={applyRecommendation}
+              disabled={recApplied || (smartOn && !!smart)}
+              className={[
+                "btn text-[12px] px-4 py-2.5 whitespace-nowrap",
+                recApplied ? "bg-mint/15 text-mint border border-mint/30 cursor-default"
+                           : "bg-accent/15 text-accent border border-accent/30 hover:bg-accent/25",
+                (smartOn && smart) ? "opacity-50 cursor-not-allowed" : "",
+              ].join(" ")}>
+              {recApplied ? "✓ Applied" : "✨ Apply Recommendation"}
+            </button>
+          </div>
+          {smartOn && smart && (
+            <div className="mt-2 text-[11px] text-muted">
+              Smart stops is on globally, so it's overriding any manual setup. Turn it off in Settings to use this recommendation instead.
+            </div>
+          )}
         </div>
       )}
 

@@ -7,7 +7,7 @@ import Allocation from "@/components/Allocation";
 
 type PortfolioRes = {
   user: { name: string; cash: number; ml_threshold: number };
-  positions: { ticker: string; qty: number; avg_cost: number; stop_loss: number | null; take_profit: number | null }[];
+  positions: { ticker: string; qty: number; avg_cost: number; stop_loss: number | null; take_profit: number | null; review_at?: string | null }[];
   watchlist: any[];
   quotes: Record<string, { price: number; pct: number; hi52: number; lo52: number; name: string }>;
   ml: Record<string, number>;
@@ -278,7 +278,15 @@ export default function OverviewPage() {
               return (
                 <tr key={p.ticker} className="border-b border-border1/50 last:border-b-0 hover:bg-card2/50 transition-colors">
                   <td className="px-5 py-3 font-sans">
-                    <div className="text-ink font-semibold">{p.ticker}</div>
+                    <div className="text-ink font-semibold flex items-center gap-2">
+                      {p.ticker}
+                      {p.review_at && new Date(p.review_at).getTime() < Date.now() && (
+                        <a href="/trade" title="Review window expired — re-tune stops"
+                           className="pill text-[10px] bg-amber/10 text-amber border border-amber/20 hover:bg-amber/20">
+                          🔄 Review
+                        </a>
+                      )}
+                    </div>
                     <div className="text-muted text-[11px] truncate max-w-[140px]">{q.name}</div>
                   </td>
                   <td className="px-2 py-3"><Sparkline ticker={p.ticker} /></td>

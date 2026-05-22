@@ -9,7 +9,7 @@ import { computeSmartStops } from "@/lib/signal";
  */
 export async function POST(req: Request) {
   const s = await requireSession();
-  const { side, ticker, qty, stop_loss, take_profit } = await req.json();
+  const { side, ticker, qty, stop_loss, take_profit, review_days } = await req.json();
   const tk = String(ticker || "").trim().toUpperCase();
   const q = Number(qty);
   if (!tk || !q || q <= 0) return NextResponse.json({ error: "Bad input" }, { status: 400 });
@@ -46,8 +46,13 @@ export async function POST(req: Request) {
       const nc = (oq * oc + q * price) / nq;
       await sql`UPDATE positions SET qty=${nq}, avg_cost=${nc} WHERE user_id=${s.uid} AND ticker=${tk}`;
     } else {
-      await sql`INSERT INTO positions (user_id, ticker, qty, avg_cost, stop_loss, take_profit)
-        VALUES (${s.uid}, ${tk}, ${q}, ${price}, ${useStop}, ${useTgt})`;
+      // Optional review window: e.g. 30 days from now → review_at = now + N days.
+      const reviewDays = Number(review_days);
+      const reviewAt = reviewDays > 0
+        ? new Date(Date.now() + reviewDays * 86400_000).toISOString()
+        : null;
+      await sql`INSERT INTO positions (user_id, ticker, qty, avg_cost, stop_loss, take_profit, review_at)
+        VALUES (${s.uid}, ${tk}, ${q}, ${price}, ${useStop}, ${useTgt}, ${reviewAt})`;
     }
     await sql`INSERT INTO trades (user_id, ticker, side, qty, price)
       VALUES (${s.uid}, ${tk}, 'BUY', ${q}, ${price})`;

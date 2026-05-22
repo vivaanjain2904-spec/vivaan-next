@@ -80,6 +80,55 @@ export function computeSmartStops(candles: Candle[]): { stop_loss: number; take_
   };
 }
 
+/**
+ * Full recommended setup for a position — stops, target, and a review window.
+ * Combines ATR-based stops (`computeSmartStops`) with a volatility bucket so
+ * higher-vol names get re-evaluated sooner.
+ *
+ * volatility_class:
+ *   - "low"      <2% daily ATR  → review in 60 days, tighter relative stops
+ *   - "moderate" 2-4% daily ATR → review in 30 days
+ *   - "high"     >4% daily ATR  → review in 14 days, ATR-based wider stops
+ */
+export type Recommendation = {
+  stop_loss: number;        // fraction, e.g. 0.07
+  take_profit: number;      // fraction, e.g. 0.14
+  review_days: number;
+  volatility_class: "low" | "moderate" | "high";
+  atr_pct: number;          // ATR as % of price (rounded)
+  rationale: string;        // 1-line human-readable explanation
+};
+
+export function computeRecommendation(candles: Candle[]): Recommendation | null {
+  const stops = computeSmartStops(candles);
+  if (!stops) return null;
+  const recent = candles.slice(-15);
+  let trSum = 0;
+  for (let i = 1; i < recent.length; i++) {
+    const h = recent[i].h, l = recent[i].l, prevC = recent[i - 1].c;
+    trSum += Math.max(h - l, Math.abs(h - prevC), Math.abs(l - prevC));
+  }
+  const atr = trSum / (recent.length - 1);
+  const lastPrice = recent[recent.length - 1].c;
+  const volPct = atr / lastPrice;
+
+  let cls: "low" | "moderate" | "high";
+  let reviewDays: number;
+  let label: string;
+  if (volPct < 0.02)      { cls = "low";      reviewDays = 60; label = "low-volatility"; }
+  else if (volPct < 0.04) { cls = "moderate"; reviewDays = 30; label = "moderate-volatility"; }
+  else                    { cls = "high";     reviewDays = 14; label = "high-volatility"; }
+
+  return {
+    stop_loss: stops.stop_loss,
+    take_profit: stops.take_profit,
+    review_days: reviewDays,
+    volatility_class: cls,
+    atr_pct: Number((volPct * 100).toFixed(2)),
+    rationale: `${label} (ATR ${(volPct * 100).toFixed(1)}%/day) — recommended review every ${reviewDays}d`,
+  };
+}
+
 function computeRSI(closes: number[], period = 14): number {
   if (closes.length < period + 1) return 50;
   let gains = 0, losses = 0;
