@@ -16,7 +16,7 @@ export const maxDuration = 30;
 export async function POST() {
   const s = await requireSession();
 
-  const userRow = await sql`SELECT id, name, ntfy_topic, discord_webhook,
+  const userRow = await sql`SELECT id, name, ntfy_topic, discord_webhook, email,
     ml_alerts, ml_threshold, alpaca_key, alpaca_secret, auto_trade, auto_buy_size
     FROM users WHERE id=${s.uid}`;
   const user = userRow.rows[0];
