@@ -1,0 +1,16 @@
+name: Check Vaelor alerts
+on:
+  schedule:
+    - cron: "*/15 13-21 * * 1-5"
+  workflow_dispatch:
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Hit alert-check endpoint
+        run: |
+          curl -sS -o /tmp/out.json -w "HTTP %{http_code}\n" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            https://vaelor.dev/api/cron/check-alerts
+          echo "---"
+          cat /tmp/out.json
