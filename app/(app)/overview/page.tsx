@@ -55,11 +55,33 @@ export default function OverviewPage() {
 
   async function seedDemo() {
     setSeedBusy(true); setSeedMsg("");
-    const j = await fetch("/api/seed-demo", { method: "POST" }).then(r => r.json()).catch(() => null);
-    if (j?.bought) setSeedMsg(`Seeded ${j.bought.length} stocks!`);
-    else setSeedMsg(j?.error ?? "Something went wrong.");
-    setSeedBusy(false);
-    await loadPortfolio();
+    try {
+      const r = await fetch("/api/seed-demo", { method: "POST" });
+      if (!r.ok) {
+        const txt = await r.text().catch(() => "");
+        setSeedMsg(`Seed failed (${r.status}). ${txt.slice(0, 160)}`);
+        return;
+      }
+      const j = await r.json();
+      const boughtN  = j.bought?.length  ?? 0;
+      const skippedN = j.skipped?.length ?? 0;
+      if (boughtN > 0) {
+        setSeedMsg(
+          `✓ Seeded ${boughtN} stocks · spent ${fp(Number(j.total_cost))} · ${fp(Number(j.cash_remaining))} cash left.` +
+          (skippedN > 0 ? ` Skipped ${skippedN} (already held or out of cash).` : "")
+        );
+      } else if (skippedN > 0) {
+        const reasons = (j.skipped as any[]).map(s => `${s.ticker} (${s.reason})`).join(", ");
+        setSeedMsg(`Nothing seeded — all 10 starter stocks are either already in your portfolio or you're out of cash. Detail: ${reasons}`);
+      } else {
+        setSeedMsg("Seed completed but no stocks were added.");
+      }
+      await loadPortfolio();
+    } catch (e: any) {
+      setSeedMsg(`Error: ${String(e?.message ?? e)}`);
+    } finally {
+      setSeedBusy(false);
+    }
   }
 
   if (err) return <div className="panel text-red text-sm">{err}</div>;
