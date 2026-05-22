@@ -23,6 +23,7 @@ export default function SettingsPage() {
   const [seedRes, setSeedRes] = useState<any>(null);
   const [pingRes, setPingRes] = useState<any>(null);
   const [runRes, setRunRes]   = useState<any>(null);
+  const [notifyRes, setNotifyRes] = useState<any>(null);
 
   async function load() {
     const j = await fetch("/api/auth/me").then(r => r.json());
@@ -61,8 +62,10 @@ export default function SettingsPage() {
     load();
   }
   async function testNotify() {
+    setNotifyRes({ loading: true });
     const r = await fetch("/api/test-notify", { method: "POST" });
-    setMsg(r.ok ? "Sent! Check your phone." : "Failed"); setTimeout(() => setMsg(""), 3000);
+    const j = await r.json();
+    setNotifyRes(j);
   }
   async function pingAlpaca() {
     setPingRes({ loading: true });
@@ -212,6 +215,35 @@ export default function SettingsPage() {
         )}
         <button onClick={runAlertCheck} className="btn-ghost">🤖 Run Alert Check</button>
       </div>
+
+      {notifyRes && (
+        <div className="panel mb-4 text-xs font-mono space-y-1.5">
+          {notifyRes.loading ? (
+            <div className="text-muted">Sending test notifications…</div>
+          ) : notifyRes.error ? (
+            <div className="text-red">✗ {notifyRes.error}</div>
+          ) : (
+            <>
+              <div className={notifyRes.ok ? "text-mint" : "text-amber"}>
+                {notifyRes.ok ? "✓ All channels delivered successfully." : "⚠ Some channels failed — details below."}
+              </div>
+              {(notifyRes.results ?? []).map((r: any) => (
+                <div key={r.channel} className={r.ok ? "text-mint" : "text-red"}>
+                  {r.ok ? "✓" : "✗"} <b className="uppercase">{r.channel}</b>
+                  {r.error && <span className="text-muted ml-2">— {r.error}</span>}
+                </div>
+              ))}
+              {notifyRes.configured?.email && !notifyRes.hasResendKey && (
+                <div className="text-amber mt-2 pt-2 border-t border-border1">
+                  ⚠ Email is configured but <span className="font-bold">RESEND_API_KEY</span> is missing from the Vercel env vars.
+                  Add it in Project Settings → Environment Variables → Redeploy.
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
+
       {runRes && !runRes.loading && (
         <div className="panel mb-7 text-xs font-mono space-y-1">
           <div className="text-mint">

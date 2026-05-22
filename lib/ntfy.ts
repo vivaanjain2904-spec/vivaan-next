@@ -1,35 +1,51 @@
 import { Resend } from "resend";
 
+export type ChannelResult = { channel: string; ok: boolean; error?: string };
+
 /** ntfy.sh push — free phone notifications, no account. */
-export async function sendNtfy(topic: string, title: string, body: string) {
-  if (!topic) return;
-  await fetch(`https://ntfy.sh/${topic.trim()}`, {
-    method: "POST",
-    headers: {
-      "Title": title,
-      "Priority": "high",
-      "Tags": "chart_with_upwards_trend",
-    },
-    body,
-  }).catch(() => {});
+export async function sendNtfy(topic: string, title: string, body: string): Promise<ChannelResult> {
+  if (!topic) return { channel: "ntfy", ok: false, error: "no topic configured" };
+  try {
+    const r = await fetch(`https://ntfy.sh/${topic.trim()}`, {
+      method: "POST",
+      headers: {
+        "Title": title,
+        "Priority": "high",
+        "Tags": "chart_with_upwards_trend",
+      },
+      body,
+    });
+    if (!r.ok) return { channel: "ntfy", ok: false, error: `HTTP ${r.status}` };
+    return { channel: "ntfy", ok: true };
+  } catch (e: any) {
+    return { channel: "ntfy", ok: false, error: String(e?.message ?? e) };
+  }
 }
 
-export async function sendDiscord(webhook: string, title: string, body: string) {
-  if (!webhook) return;
-  await fetch(webhook, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ content: `**${title}**\n${body}` }),
-  }).catch(() => {});
+export async function sendDiscord(webhook: string, title: string, body: string): Promise<ChannelResult> {
+  if (!webhook) return { channel: "discord", ok: false, error: "no webhook configured" };
+  try {
+    const r = await fetch(webhook, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content: `**${title}**\n${body}` }),
+    });
+    if (!r.ok) return { channel: "discord", ok: false, error: `HTTP ${r.status}` };
+    return { channel: "discord", ok: true };
+  } catch (e: any) {
+    return { channel: "discord", ok: false, error: String(e?.message ?? e) };
+  }
 }
 
 /** Email via Resend. Needs RESEND_API_KEY env var; optional RESEND_FROM overrides sender. */
-export async function sendEmail(to: string, title: string, body: string) {
-  if (!to || !process.env.RESEND_API_KEY) return;
+export async function sendEmail(to: string, title: string, body: string): Promise<ChannelResult> {
+  if (!to) return { channel: "email", ok: false, error: "no address configured" };
+  if (!process.env.RESEND_API_KEY)
+    return { channel: "email", ok: false, error: "RESEND_API_KEY env var not set on server" };
   try {
     const resend = new Resend(process.env.RESEND_API_KEY);
     const from = process.env.RESEND_FROM ?? "Vaelor <onboarding@resend.dev>";
-    await resend.emails.send({
+    const r = await resend.emails.send({
       from,
       to: to.trim(),
       subject: title,
@@ -44,8 +60,13 @@ export async function sendEmail(to: string, title: string, body: string) {
       `,
       text: `${title}\n\n${body}\n\n— Vaelor · https://vaelor.dev/settings`,
     });
-  } catch (e) {
-    console.error("Email send failed:", e);
+    if ((r as any).error) {
+      const err = (r as any).error;
+      return { channel: "email", ok: false, error: `${err.name ?? "Error"}: ${err.message ?? JSON.stringify(err)}` };
+    }
+    return { channel: "email", ok: true };
+  } catch (e: any) {
+    return { channel: "email", ok: false, error: String(e?.message ?? e) };
   }
 }
 
@@ -58,10 +79,10 @@ export async function alertUser(
   user: { ntfy_topic?: string | null; discord_webhook?: string | null; email?: string | null },
   title: string,
   body: string,
-) {
-  await Promise.all([
-    user.ntfy_topic     ? sendNtfy(user.ntfy_topic, title, body)        : null,
-    user.discord_webhook ? sendDiscord(user.discord_webhook, title, body) : null,
-    user.email          ? sendEmail(user.email, title, body)            : null,
-  ]);
+): Promise<ChannelResult[]> {
+  const tasks: Promise<ChannelResult>[] = [];
+  if (user.ntfy_topic)      tasks.push(sendNtfy(user.ntfy_topic, title, body));
+  if (user.discord_webhook) tasks.push(sendDiscord(user.discord_webhook, title, body));
+  if (user.email)           tasks.push(sendEmail(user.email, title, body));
+  return tasks.length ? Promise.all(tasks) : [];
 }
