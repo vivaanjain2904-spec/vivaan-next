@@ -258,9 +258,12 @@ function QuoteCard({ q, positions, cash, onTrade, onMsg }: {
 
   async function buy() {
     setBusy(true);
-    // When smart stops is on, use the ATR-computed values instead of the manual sliders
-    const actualSl = smartOn && smart ? smart.stop_loss  : sl / 100;
-    const actualTp = smartOn && smart ? smart.take_profit : tp / 100;
+    // Smart stops normally wins when enabled globally. BUT if the user has clicked
+    // Apply Recommendation (or otherwise touched the sliders), they've taken manual
+    // control — respect the slider values regardless of the global toggle.
+    const manualOverride = recApplied;
+    const actualSl = (smartOn && smart && !manualOverride) ? smart.stop_loss  : sl / 100;
+    const actualTp = (smartOn && smart && !manualOverride) ? smart.take_profit : tp / 100;
     const r = await fetch("/api/trade", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -364,7 +367,7 @@ function QuoteCard({ q, positions, cash, onTrade, onMsg }: {
           <input type="number" className="input font-mono" min={1} step={1} value={qty}
                  onChange={e => setQty(Math.max(1, Number(e.target.value) || 1))}
                  placeholder="any amount" />
-          {smartOn && smart ? (
+          {smartOn && smart && !recApplied ? (
             <div className="mt-3 p-3 bg-mint/8 border border-mint/25 rounded-lg text-[12px]">
               <div className="text-mint font-semibold mb-1.5">🧠 Smart stops on — bot is picking:</div>
               <div className="font-mono text-ink2">
@@ -374,10 +377,21 @@ function QuoteCard({ q, positions, cash, onTrade, onMsg }: {
               </div>
               <div className="text-muted text-[10px] mt-1">
                 Based on this stock's 14-day ATR (volatility). Sliders below are ignored.
+                Click <b>Apply Recommendation</b> above to take manual control of these sliders.
               </div>
             </div>
           ) : null}
-          <div className={`grid grid-cols-2 gap-3 mt-3 ${smartOn && smart ? "opacity-40 pointer-events-none" : ""}`}>
+          {recApplied && (
+            <div className="mt-3 p-2.5 bg-accent/8 border border-accent/25 rounded-lg text-[11px] text-ink2 flex items-center justify-between gap-3">
+              <span>✨ Recommendation applied. Tweak the sliders below if you want.</span>
+              <button
+                onClick={() => { setRecApplied(false); setReviewDays(0); }}
+                className="text-muted hover:text-ink text-[11px] underline">
+                undo
+              </button>
+            </div>
+          )}
+          <div className={`grid grid-cols-2 gap-3 mt-3 ${smartOn && smart && !recApplied ? "opacity-40 pointer-events-none" : ""}`}>
             <div>
               <label className="label">Stop Loss: {sl}%</label>
               <input type="range" min={1} max={30} value={sl}
