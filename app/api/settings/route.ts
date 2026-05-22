@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
-import { sql } from "@/lib/db";
+import { sql, initDb } from "@/lib/db";
 import { requireSession, hashPassword } from "@/lib/auth";
 
 export async function POST(req: Request) {
   const s = await requireSession();
+  await initDb().catch(() => {}); // ensures new columns (email, etc.) exist before write
   const {
     ntfy_topic, discord_webhook, email, ml_alerts, ml_threshold,
     alpaca_key, alpaca_secret, auto_trade, smart_stops, auto_buy_size,

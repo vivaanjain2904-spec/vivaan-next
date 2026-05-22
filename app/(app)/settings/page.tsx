@@ -207,9 +207,7 @@ export default function SettingsPage() {
       {/* Save bar */}
       <div className="flex gap-2 mb-3 flex-wrap">
         <button onClick={saveSettings} className="btn-mint flex-1 min-w-[200px]">💾 Save All Settings</button>
-        {(user.ntfy_topic || user.discord_webhook || user.email) && (
-          <button onClick={testNotify} className="btn-ghost">📨 Test Notification</button>
-        )}
+        <button onClick={testNotify} className="btn-ghost">📨 Test Notification</button>
         {(user.alpaca_key && user.alpaca_secret) && (
           <button onClick={pingAlpaca} className="btn-ghost">🔌 Test Alpaca</button>
         )}
