@@ -112,30 +112,42 @@ export default function SettingsPage() {
     <>
       {msg && <div className="panel mb-4 text-mint text-sm">{msg}</div>}
 
-      {/* Push Notifications */}
-      <div className="section-h">Push Notifications</div>
+      {/* Notifications */}
+      <div className="section-h">Notifications</div>
       <div className="panel mb-6">
         <div className="text-sm text-ink2 mb-4 leading-relaxed">
-          <b className="text-mint">Get alerts on your phone in 3 steps:</b><br />
-          1. Install the <b>ntfy</b> app from <a href="https://ntfy.sh" target="_blank" rel="noreferrer" className="text-mint underline">ntfy.sh</a> (iOS / Android)<br />
-          2. Pick a unique topic name below<br />
-          3. In the ntfy app: subscribe to that topic → hit Test below
+          Pick one or more channels. <b className="text-mint">Alerts fire for stop-loss, take-profit, ML signals,
+          and auto-trade receipts.</b> Save → Test from inside this panel to confirm each one is wired up.
         </div>
-        <label className="label">ntfy.sh topic</label>
+
+        <label className="label">📱 ntfy.sh topic (push to phone)</label>
         <input className="input font-mono" value={ntfy} onChange={e => setNtfy(e.target.value)}
                placeholder={`e.g. vivaan-stocks-${Math.random().toString(36).slice(2, 7)}`} />
-        <label className="label mt-3">Discord webhook (optional)</label>
+        <div className="text-muted text-[11px] mt-1.5">
+          Install the <a href="https://ntfy.sh" target="_blank" rel="noreferrer" className="text-mint underline">ntfy</a> app, subscribe to this topic, and you'll get instant phone push.
+        </div>
+
+        <label className="label mt-4">💬 Discord webhook</label>
         <input className="input font-mono text-xs" value={disc} onChange={e => setDisc(e.target.value)}
                placeholder="https://discord.com/api/webhooks/…" />
-        <label className="label mt-3">Email (optional)</label>
+
+        <label className="label mt-4">📧 Email</label>
         <input type="email" className="input font-mono text-xs" value={email}
                onChange={e => setEmail(e.target.value)}
                placeholder="you@example.com" autoComplete="email" />
         <div className="text-muted text-[11px] mt-1.5 leading-relaxed">
-          Alerts also delivered by email. Sent from <span className="font-mono">onboarding@resend.dev</span> by default —
-          verify <span className="font-mono">vaelor.dev</span> in your Resend dashboard to send from a custom address.
+          Sent via Resend from <span className="font-mono">onboarding@resend.dev</span> by default.
+          Verify <span className="font-mono">vaelor.dev</span> in your Resend dashboard to send from a custom address.
         </div>
-        <label className="flex items-center gap-2 mt-4 text-sm cursor-pointer">
+
+        {/* Inline test + result (so user doesn't have to scroll to the bottom) */}
+        <div className="mt-5 pt-5 border-t border-border1 flex flex-wrap gap-2 items-center">
+          <button onClick={testNotify} className="btn-mint text-[12px]">📨 Send Test Notification</button>
+          <span className="text-muted text-[11px]">Tries every channel above and reports per-channel status.</span>
+        </div>
+        {notifyRes && <NotifyResultInline res={notifyRes} />}
+
+        <label className="flex items-center gap-2 mt-5 text-sm cursor-pointer">
           <input type="checkbox" checked={mlOn} onChange={e => setMlOn(e.target.checked)}
                  className="accent-mint" />
           <span>Enable ML sell-signal alerts</span>
@@ -195,6 +207,15 @@ export default function SettingsPage() {
             When auto-trader fires a BUY, it spends up to this amount (any number you want — $50, $500, $50,000). Bot rounds down to whole shares.
           </div>
         </div>
+
+        {/* Inline Auto-Trader tests (so user doesn't have to scroll) */}
+        <div className="mt-5 pt-5 border-t border-border1 flex flex-wrap gap-2 items-center">
+          {(user.alpaca_key && user.alpaca_secret) && (
+            <button onClick={pingAlpaca} className="btn-ghost text-[12px]">🔌 Test Alpaca</button>
+          )}
+          <button onClick={testNotify} className="btn-ghost text-[12px]">📨 Test Notification</button>
+          <span className="text-muted text-[11px]">Verifies Alpaca connection and that alerts reach your inbox.</span>
+        </div>
         {pingRes && (
           <div className={`mt-3 text-xs p-3 rounded-lg font-mono ${pingRes.ok ? "bg-mint/10 text-mint" : "bg-red/10 text-red"}`}>
             {pingRes.loading ? "Pinging…"
@@ -202,45 +223,14 @@ export default function SettingsPage() {
               : `✗ ${pingRes.error}`}
           </div>
         )}
+        {notifyRes && <NotifyResultInline res={notifyRes} />}
       </div>
 
       {/* Save bar */}
       <div className="flex gap-2 mb-3 flex-wrap">
         <button onClick={saveSettings} className="btn-mint flex-1 min-w-[200px]">💾 Save All Settings</button>
-        <button onClick={testNotify} className="btn-ghost">📨 Test Notification</button>
-        {(user.alpaca_key && user.alpaca_secret) && (
-          <button onClick={pingAlpaca} className="btn-ghost">🔌 Test Alpaca</button>
-        )}
         <button onClick={runAlertCheck} className="btn-ghost">🤖 Run Alert Check</button>
       </div>
-
-      {notifyRes && (
-        <div className="panel mb-4 text-xs font-mono space-y-1.5">
-          {notifyRes.loading ? (
-            <div className="text-muted">Sending test notifications…</div>
-          ) : notifyRes.error ? (
-            <div className="text-red">✗ {notifyRes.error}</div>
-          ) : (
-            <>
-              <div className={notifyRes.ok ? "text-mint" : "text-amber"}>
-                {notifyRes.ok ? "✓ All channels delivered successfully." : "⚠ Some channels failed — details below."}
-              </div>
-              {(notifyRes.results ?? []).map((r: any) => (
-                <div key={r.channel} className={r.ok ? "text-mint" : "text-red"}>
-                  {r.ok ? "✓" : "✗"} <b className="uppercase">{r.channel}</b>
-                  {r.error && <span className="text-muted ml-2">— {r.error}</span>}
-                </div>
-              ))}
-              {notifyRes.configured?.email && !notifyRes.hasResendKey && (
-                <div className="text-amber mt-2 pt-2 border-t border-border1">
-                  ⚠ Email is configured but <span className="font-bold">RESEND_API_KEY</span> is missing from the Vercel env vars.
-                  Add it in Project Settings → Environment Variables → Redeploy.
-                </div>
-              )}
-            </>
-          )}
-        </div>
-      )}
 
       {runRes && !runRes.loading && (
         <div className="panel mb-7 text-xs font-mono space-y-1">
@@ -341,5 +331,33 @@ export default function SettingsPage() {
         </div>
       </div>
     </>
+  );
+}
+
+function NotifyResultInline({ res }: { res: any }) {
+  if (res.loading) {
+    return <div className="mt-3 text-xs text-muted font-mono">Sending test notifications…</div>;
+  }
+  if (res.error) {
+    return <div className="mt-3 text-xs text-red font-mono p-3 rounded-lg bg-red/10">✗ {res.error}</div>;
+  }
+  return (
+    <div className={`mt-3 text-xs font-mono p-3 rounded-lg space-y-1.5 ${res.ok ? "bg-mint/10" : "bg-amber/10"}`}>
+      <div className={res.ok ? "text-mint" : "text-amber"}>
+        {res.ok ? "✓ All channels delivered." : "⚠ Some channels failed — details below."}
+      </div>
+      {(res.results ?? []).map((r: any) => (
+        <div key={r.channel} className={r.ok ? "text-mint" : "text-red"}>
+          {r.ok ? "✓" : "✗"} <b className="uppercase">{r.channel}</b>
+          {r.error && <span className="text-muted ml-2">— {r.error}</span>}
+        </div>
+      ))}
+      {res.configured?.email && !res.hasResendKey && (
+        <div className="text-amber mt-2 pt-2 border-t border-border1/40">
+          ⚠ Email is configured but <span className="font-bold">RESEND_API_KEY</span> is missing from Vercel env vars.
+          Add it in Project Settings → Environment Variables → Redeploy.
+        </div>
+      )}
+    </div>
   );
 }
