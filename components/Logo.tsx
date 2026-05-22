@@ -45,7 +45,7 @@ export default function Logo({ size = "sm", showTagline = true, className = "" }
       </span>
       {showTagline && (
         <span
-          className={`font-sans uppercase text-white/55 ${s.sub} ${s.subTrack}`}
+          className={`font-sans uppercase text-white/55 ${s.sub} ${s.subTrack} hidden sm:inline`}
           style={{ textIndent: stacked ? "0.55em" : "0.35em", whiteSpace: "nowrap" }}
         >
           AI Trading &amp; Investment

@@ -49,16 +49,22 @@ export default function Header() {
 
   if (!me) return null;
   return (
-    <header className="flex items-center justify-between py-4 mb-6 border-b border-border1">
+    <header className="flex items-center justify-between py-4 mb-6 border-b border-border1 gap-3">
       <Logo size="sm" showTagline />
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
         <MarketStatus />
-        <span className="pill-muted font-mono">{fp(me.cash)}</span>
+        <span className="pill-muted font-mono text-[11px] sm:text-[11px]">{fp(me.cash)}</span>
         {notifs > 0 && <span className="pill-mint">🔔 {notifs}</span>}
-        <span className="pill-muted">{me.name}</span>
+        <span className="pill-muted hidden sm:inline-flex">{me.name}</span>
         <button onClick={signOut}
-                className="text-[12px] text-muted hover:text-red transition-colors ml-1">
-          Sign out
+                className="flex items-center gap-1 text-muted hover:text-red transition-colors ml-0.5 sm:ml-1">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75"
+               strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 sm:hidden">
+            <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4" />
+            <polyline points="16 17 21 12 16 7" />
+            <line x1="21" y1="12" x2="9" y2="12" />
+          </svg>
+          <span className="hidden sm:inline text-[12px]">Sign out</span>
         </button>
       </div>
     </header>

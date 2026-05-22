@@ -13,55 +13,164 @@ type PortfolioRes = {
   ml: Record<string, number>;
 };
 
+const FEATURE_CARDS = [
+  { href: "/trade",     emoji: "📈", title: "Trade",       desc: "Buy and sell stocks with real-time quotes" },
+  { href: "/watchlist", emoji: "👁",  title: "Watchlist",  desc: "Track stocks you want to keep an eye on" },
+  { href: "/charts",    emoji: "📊", title: "Charts",      desc: "Analyse price movements interactively" },
+  { href: "/screener",  emoji: "🔍", title: "Screener",    desc: "Filter stocks by price, volume, and metrics" },
+  { href: "/news",      emoji: "📰", title: "Market News", desc: "Stay on top of the latest headlines" },
+  { href: "/backtest",  emoji: "⚡", title: "Backtest",    desc: "Test your strategy against historical data" },
+] as const;
+
 export default function OverviewPage() {
   const [d, setD] = useState<PortfolioRes | null>(null);
   const [err, setErr] = useState("");
   const [sigs, setSigs] = useState<Record<string, any>>({});
+  const [alertBusy, setAlertBusy] = useState(false);
+  const [alertRes, setAlertRes] = useState<{ msg: string; breaches?: any[] } | null>(null);
+  const [seedBusy, setSeedBusy] = useState(false);
+  const [seedMsg, setSeedMsg] = useState("");
 
-  useEffect(() => {
-    fetch("/api/portfolio").then(r => r.json()).then(j => {
-      if (j.error) { setErr(j.error); return; }
-      setD(j);
-      const tickers = j.positions.map((p: any) => p.ticker);
-      if (tickers.length) {
-        fetch("/api/signals", {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ tickers }),
-        }).then(r => r.json()).then(s => setSigs(s.signals ?? {}));
-      }
-    }).catch(e => setErr(String(e)));
-  }, []);
+  async function loadPortfolio() {
+    const j = await fetch("/api/portfolio").then(r => r.json());
+    if (j.error) { setErr(j.error); return; }
+    setD(j);
+    const tickers = j.positions.map((p: any) => p.ticker);
+    if (tickers.length) {
+      fetch("/api/signals", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tickers }),
+      }).then(r => r.json()).then(s => setSigs(s.signals ?? {}));
+    }
+  }
+
+  useEffect(() => { loadPortfolio().catch(e => setErr(String(e))); }, []);
+
+  async function runAlerts() {
+    setAlertBusy(true); setAlertRes(null);
+    const j = await fetch("/api/run-alerts-self", { method: "POST" }).then(r => r.json()).catch(() => null);
+    setAlertRes(j ?? { msg: "Request failed — check your connection." });
+    setAlertBusy(false);
+  }
+
+  async function seedDemo() {
+    setSeedBusy(true); setSeedMsg("");
+    const j = await fetch("/api/seed-demo", { method: "POST" }).then(r => r.json()).catch(() => null);
+    if (j?.bought) setSeedMsg(`Seeded ${j.bought.length} stocks!`);
+    else setSeedMsg(j?.error ?? "Something went wrong.");
+    setSeedBusy(false);
+    await loadPortfolio();
+  }
 
   if (err) return <div className="panel text-red text-sm">{err}</div>;
-  if (!d)  return (
-    <>
-      <div className="flex flex-wrap gap-3 mb-7">
-        {Array.from({length: 5}).map((_, i) => (
-          <div key={i} className="panel flex-1 min-w-[160px]">
-            <div className="h-3 bg-card2 rounded mb-3 w-1/2 animate-shimmer" />
-            <div className="h-7 bg-card2 rounded animate-shimmer" />
-            <div className="h-2 bg-card2 rounded mt-3 w-2/3 animate-shimmer" />
-          </div>
-        ))}
-      </div>
-    </>
+  if (!d) return (
+    <div className="flex flex-wrap gap-3 mb-7">
+      {Array.from({ length: 5 }).map((_, i) => (
+        <div key={i} className="panel flex-1 min-w-[160px]">
+          <div className="h-3 bg-card2 rounded mb-3 w-1/2 animate-shimmer" />
+          <div className="h-7 bg-card2 rounded animate-shimmer" />
+          <div className="h-2 bg-card2 rounded mt-3 w-2/3 animate-shimmer" />
+        </div>
+      ))}
+    </div>
   );
 
   const positions = d.positions;
   const cash = Number(d.user.cash);
 
+  /* ── Alert check result banner ── */
+  const AlertBanner = alertRes ? (
+    <div className={[
+      "panel mb-6 text-sm flex items-start gap-3",
+      (alertRes.breaches?.length ?? 0) > 0 ? "border-l-2 border-l-amber" : "border-l-2 border-l-mint",
+    ].join(" ")}>
+      <span className="text-lg">{(alertRes.breaches?.length ?? 0) > 0 ? "⚠️" : "✅"}</span>
+      <div>
+        <div className="font-semibold text-ink">{alertRes.msg}</div>
+        {(alertRes.breaches?.length ?? 0) > 0 && (
+          <div className="text-xs text-muted mt-1">
+            {alertRes.breaches!.map((b: any) => `${b.ticker} (${b.kind})`).join(", ")}
+          </div>
+        )}
+      </div>
+    </div>
+  ) : null;
+
+  /* ── Quick Tools bar (shows for all users) ── */
+  const QuickTools = (
+    <div className="flex flex-wrap gap-2 mb-7">
+      <button
+        onClick={runAlerts}
+        disabled={alertBusy}
+        className="btn-ghost text-[12px] disabled:opacity-50">
+        {alertBusy ? "Checking…" : "🤖 Run Alert Check"}
+      </button>
+      <button
+        onClick={seedDemo}
+        disabled={seedBusy}
+        className="btn-ghost text-[12px] disabled:opacity-50">
+        {seedBusy ? "Seeding…" : "🌱 Seed Demo Portfolio"}
+      </button>
+      <a href="/settings" className="btn-ghost text-[12px]">⚙️ Settings</a>
+    </div>
+  );
+
+  /* ── Feature cards (shows for all users) ── */
+  const FeatureCards = (
+    <div className="mt-8">
+      <div className="section-h-lg">Quick Navigation</div>
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+        {FEATURE_CARDS.map(a => (
+          <a key={a.href} href={a.href}
+             className="panel-hover flex flex-col gap-2 cursor-pointer group">
+            <span className="text-2xl">{a.emoji}</span>
+            <div className="text-sm font-semibold text-ink group-hover:text-mint transition-colors">{a.title}</div>
+            <div className="text-xs text-muted leading-relaxed">{a.desc}</div>
+          </a>
+        ))}
+      </div>
+    </div>
+  );
+
+  /* ── Empty state ── */
   if (!positions.length) {
     return (
-      <div className="panel text-center py-16">
-        <div className="text-base text-ink mb-1 font-semibold">No holdings yet</div>
-        <div className="text-muted text-sm mb-6">
-          Head to <a href="/trade" className="text-mint hover:underline">Trade</a> to buy your first stock.
+      <div className="animate-fade-up space-y-6">
+        {seedMsg && (
+          <div className="panel border-l-2 border-l-mint text-sm text-mint">{seedMsg}</div>
+        )}
+        {AlertBanner}
+
+        {/* Welcome hero */}
+        <div className="panel dot-grid text-center py-12">
+          <div className="text-2xl font-bold text-ink mb-2">Welcome to Vaelor</div>
+          <div className="text-muted text-sm mb-1">Your account is ready. You have</div>
+          <div className="font-mono text-3xl text-mint font-semibold mt-2 mb-6">{fp(cash)}</div>
+          <div className="flex flex-wrap items-center justify-center gap-3">
+            <a href="/trade" className="btn-mint inline-flex items-center gap-2 text-sm px-6 py-3">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+                   strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+                <polyline points="23 6 13.5 15.5 8.5 10.5 1 18" />
+                <polyline points="17 6 23 6 23 12" />
+              </svg>
+              Start Trading
+            </a>
+            <button onClick={seedDemo} disabled={seedBusy}
+                    className="btn-ghost inline-flex items-center gap-2 text-sm px-6 py-3 disabled:opacity-50">
+              🌱 {seedBusy ? "Seeding…" : "Seed Demo Portfolio"}
+            </button>
+          </div>
+          <p className="text-xs text-muted mt-4">
+            Seed Demo loads 10 popular stocks (~$2,500 each) so you can explore all features right away.
+          </p>
         </div>
-        <div className="inline-block panel bg-card2 font-mono text-mint">{fp(cash)} available</div>
+
+        {FeatureCards}
       </div>
     );
   }
 
+  /* ── Full overview (user has positions) ── */
   let totalVal = 0, totalCost = 0, dayWeighted = 0;
   for (const p of positions) {
     const q = d.quotes[p.ticker]; if (!q) continue;
@@ -87,6 +196,12 @@ export default function OverviewPage() {
 
   return (
     <>
+      {seedMsg && (
+        <div className="panel mb-4 border-l-2 border-l-mint text-sm text-mint">{seedMsg}</div>
+      )}
+      {AlertBanner}
+      {QuickTools}
+
       <div className="flex flex-wrap gap-3 mb-7">
         <Kpi label="Total Value" value={fp(totalVal + cash)}
              sub={`${fp(totalVal)} invested`} color={portfolioPnl >= 0 ? "mint" : "red"} />
@@ -189,6 +304,8 @@ export default function OverviewPage() {
           </tbody>
         </table>
       </div>
+
+      {FeatureCards}
     </>
   );
 }

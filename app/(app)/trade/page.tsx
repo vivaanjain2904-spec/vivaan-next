@@ -6,6 +6,27 @@ import { fp, fpp, clr } from "@/lib/format";
 
 type Quote = { ticker: string; price: number; pct: number; hi52: number; lo52: number; name: string };
 
+const FEATURED = [
+  { ticker: "NVDA",  label: "AI & Chips"    },
+  { ticker: "AAPL",  label: "Big Tech"      },
+  { ticker: "MSFT",  label: "Big Tech"      },
+  { ticker: "GOOGL", label: "Big Tech"      },
+  { ticker: "AMZN",  label: "Big Tech"      },
+  { ticker: "TSLA",  label: "EV"            },
+  { ticker: "META",  label: "Social"        },
+  { ticker: "JPM",   label: "Finance"       },
+  { ticker: "V",     label: "Finance"       },
+  { ticker: "BRK-B", label: "Value"         },
+  { ticker: "LLY",   label: "Pharma"        },
+  { ticker: "PLTR",  label: "AI & Data"     },
+  { ticker: "COIN",  label: "Crypto"        },
+  { ticker: "NFLX",  label: "Streaming"     },
+  { ticker: "COST",  label: "Consumer"      },
+  { ticker: "WMT",   label: "Consumer"      },
+  { ticker: "XOM",   label: "Energy"        },
+  { ticker: "SHOP",  label: "E-Commerce"    },
+];
+
 export default function TradePage() {
   const [tab, setTab] = useState<"buy" | "sell" | "history">("buy");
   const [ticker, setTicker] = useState("");
@@ -15,28 +36,44 @@ export default function TradePage() {
   const [quotes, setQuotes] = useState<Record<string, Quote>>({});
   const [trades, setTrades] = useState<any[]>([]);
   const [msg, setMsg]       = useState<{ ok: boolean; text: string } | null>(null);
+  const [featured, setFeatured] = useState<Record<string, Quote>>({});
 
-  // Initial load
   async function loadAll() {
     const r = await fetch("/api/portfolio").then(r => r.json());
     setCash(Number(r.user.cash));
     setPositions(r.positions);
     setQuotes(r.quotes);
   }
+
   useEffect(() => {
     loadAll();
-    // Coming from Screener with a preselected ticker?
     if (typeof window !== "undefined") {
       const t = sessionStorage.getItem("trade_ticker");
       if (t) { setTicker(t); sessionStorage.removeItem("trade_ticker"); }
     }
+    // Fetch featured stock quotes in small batches so we don't hammer the API
+    const tickers = FEATURED.map(f => f.ticker);
+    const batches = [tickers.slice(0, 9), tickers.slice(9)];
+    batches.forEach((batch, bi) => {
+      setTimeout(() => {
+        Promise.all(batch.map(t =>
+          fetch(`/api/quote/${t}`).then(r => r.json()).catch(() => null)
+        )).then(results => {
+          setFeatured(prev => {
+            const next = { ...prev };
+            results.forEach((q, i) => { if (q && !q.error) next[batch[i]] = q; });
+            return next;
+          });
+        });
+      }, bi * 600);
+    });
   }, []);
+
   useEffect(() => {
     if (tab !== "history") return;
     fetch("/api/trade").then(r => r.json()).then(j => setTrades(j.trades ?? []));
   }, [tab]);
 
-  // Live quote on ticker change
   useEffect(() => {
     if (!ticker) { setQuote(null); return; }
     fetch(`/api/quote/${ticker}`).then(r => r.json()).then(j => {
@@ -65,15 +102,49 @@ export default function TradePage() {
 
       {tab === "buy" && (
         <>
-          <label className="label">Search ticker</label>
+          <label className="label">Search any ticker</label>
           <StockSearch value={ticker} onChange={setTicker} />
 
-          {quote && (
+          {quote ? (
             <div className="mt-5">
               <QuoteCard q={quote} positions={positions} cash={cash} onTrade={async () => {
                 await loadAll();
                 fetch(`/api/quote/${ticker}`).then(r => r.json()).then(setQuote);
               }} onMsg={setMsg} />
+            </div>
+          ) : (
+            <div className="mt-6">
+              <div className="section-h-lg">Popular Stocks — click to trade</div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                {FEATURED.map(({ ticker: tk, label }) => {
+                  const q = featured[tk];
+                  const inPort = positions.some(p => p.ticker === tk);
+                  return (
+                    <button
+                      key={tk}
+                      onClick={() => setTicker(tk)}
+                      className="panel-hover text-left group cursor-pointer transition-all">
+                      <div className="flex items-start justify-between mb-2">
+                        <span className="tk-tag text-sm group-hover:border-mint/40 transition-colors">{tk}</span>
+                        {inPort && <span className="text-[10px] text-mint font-semibold">✓ held</span>}
+                      </div>
+                      {q ? (
+                        <>
+                          <div className="font-mono font-bold text-ink text-[15px]">{fp(q.price)}</div>
+                          <div className={`font-mono text-xs mt-0.5 ${clr(q.pct)}`}>{fpp(q.pct)}</div>
+                          <div className="text-[10px] text-muted mt-2 truncate">{q.name}</div>
+                        </>
+                      ) : (
+                        <>
+                          <div className="h-4 bg-card2 rounded animate-shimmer mb-1 w-2/3" />
+                          <div className="h-3 bg-card2 rounded animate-shimmer w-1/3" />
+                        </>
+                      )}
+                      <div className="text-[10px] text-muted/70 mt-1 font-medium">{label}</div>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           )}
         </>
@@ -166,9 +237,12 @@ function QuoteCard({ q, positions, cash, onTrade, onMsg }: {
 
   async function buy() {
     setBusy(true);
+    // When smart stops is on, use the ATR-computed values instead of the manual sliders
+    const actualSl = smartOn && smart ? smart.stop_loss  : sl / 100;
+    const actualTp = smartOn && smart ? smart.take_profit : tp / 100;
     const r = await fetch("/api/trade", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ side: "BUY", ticker: q.ticker, qty, stop_loss: sl/100, take_profit: tp/100 }),
+      body: JSON.stringify({ side: "BUY", ticker: q.ticker, qty, stop_loss: actualSl, take_profit: actualTp }),
     });
     const j = await r.json(); setBusy(false);
     onMsg({ ok: r.ok, text: j.msg ?? j.error ?? "Done" });
