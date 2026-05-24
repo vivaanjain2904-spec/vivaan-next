@@ -89,9 +89,14 @@ function Hero() {
         <div className="flex flex-col sm:flex-row gap-3 justify-center mb-14 sm:mb-20">
           <Link
             href="/register"
-            className="btn-mint text-base !px-7 !py-3.5 inline-flex items-center justify-center gap-2"
+            className="btn-mint text-base !px-7 !py-3.5 inline-flex items-center justify-center gap-2 group"
           >
-            Start free <span aria-hidden>→</span>
+            Start free
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+                 strokeLinecap="round" strokeLinejoin="round"
+                 className="w-4 h-4 transition-transform group-hover:translate-x-0.5">
+              <polyline points="9 18 15 12 9 6" />
+            </svg>
           </Link>
           <Link
             href="/login"
@@ -124,32 +129,32 @@ function FeaturesSection() {
 
         <div className="grid sm:grid-cols-2 gap-4 sm:gap-5">
           <FeatureCard
-            emoji="🎯"
+            icon={<IconTarget />}
             title="ATR-based smart stops"
             desc="No more flat 5% stops shaking you out of NVDA and letting KO bleed. Each position's stop-loss & take-profit comes from that stock's own 14-day ATR. Trailing logic ratchets the stop tighter as positions run — up 20%, you're locked in for +5% no matter what."
           />
           <FeatureCard
-            emoji="📊"
+            icon={<IconChart />}
             title="ML drop-probability signals"
             desc="Every 15 minutes, every holding gets a 0–1 risk score blending RSI, 20/50-day moving averages, and 1-month momentum. When risk crosses your threshold, you know before the bleed. Walk-forward validated — no curve-fitted backtests."
           />
           <FeatureCard
-            emoji="🔔"
+            icon={<IconBell />}
             title="Multi-channel alerts"
             desc="Email (via Resend), mobile push (via ntfy), Discord webhooks, and browser notifications. All four fire when a position trips a threshold. ≤15-minute latency during US market hours. Configure once, never miss again."
           />
           <FeatureCard
-            emoji="🤖"
+            icon={<IconCpu />}
             title="Hands-off execution"
             desc="Connect a free Alpaca paper account and Vaelor fires sells automatically when signals trip. Conviction-based sizing — stronger signals get bigger bets, weaker ones get smaller. Bear-regime filter pauses new buys when SPY breaks its 50-day MA."
           />
           <FeatureCard
-            emoji="📈"
+            icon={<IconTrending />}
             title="Real performance dashboard"
             desc="Win rate, profit factor, alpha vs S&P 500, realized vs unrealized P&L, top winners/losers, per-position contribution. Backed by FIFO-matched closed round-trips — no smoothing, no cherry-picking."
           />
           <FeatureCard
-            emoji="⚡"
+            icon={<IconZap />}
             title="Built-in backtest engine"
             desc="Replay any strategy on real historical data. Compare to buy-and-hold. See whether your edge is actually edge or just lucky timing. Test before you trust."
           />
@@ -223,9 +228,14 @@ function CTASection() {
         </p>
         <Link
           href="/register"
-          className="btn-mint text-base !px-8 !py-3.5 inline-flex items-center gap-2"
+          className="btn-mint text-base !px-8 !py-3.5 inline-flex items-center gap-2 group"
         >
-          Get started free <span aria-hidden>→</span>
+          Get started free
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+               strokeLinecap="round" strokeLinejoin="round"
+               className="w-4 h-4 transition-transform group-hover:translate-x-0.5">
+            <polyline points="9 18 15 12 9 6" />
+          </svg>
         </Link>
       </div>
     </section>
@@ -268,15 +278,79 @@ function FooterBar() {
 
 /* ──────── Sub-components ──────── */
 
-function FeatureCard({ emoji, title, desc }: { emoji: string; title: string; desc: string }) {
+function FeatureCard({ icon, title, desc }: { icon: React.ReactNode; title: string; desc: string }) {
   return (
-    <div className="panel hover:border-mint/30 transition-colors group">
-      <div className="text-3xl mb-4">{emoji}</div>
+    <div className="panel hover:border-mint/30 transition-all duration-200 group">
+      <div className="w-11 h-11 rounded-lg bg-mint/10 border border-mint/20 flex items-center justify-center text-mint mb-5 group-hover:bg-mint/15 group-hover:border-mint/30 transition-colors">
+        {icon}
+      </div>
       <h3 className="text-lg font-semibold text-ink mb-2 group-hover:text-mint transition-colors">
         {title}
       </h3>
       <p className="text-[13px] text-ink2 leading-relaxed">{desc}</p>
     </div>
+  );
+}
+
+/* ─────────── Lucide-style SVG icons (stroke-based, brand-consistent) ─────────── */
+
+const ICON_PROPS = {
+  viewBox: "0 0 24 24",
+  fill: "none",
+  stroke: "currentColor",
+  strokeWidth: 1.75,
+  strokeLinecap: "round" as const,
+  strokeLinejoin: "round" as const,
+  className: "w-5 h-5",
+};
+
+function IconTarget() {
+  return (
+    <svg {...ICON_PROPS}>
+      <circle cx="12" cy="12" r="10" />
+      <circle cx="12" cy="12" r="6" />
+      <circle cx="12" cy="12" r="2" />
+    </svg>
+  );
+}
+function IconChart() {
+  return (
+    <svg {...ICON_PROPS}>
+      <path d="M3 3v18h18" />
+      <path d="M7 15l4-6 4 4 4-7" />
+    </svg>
+  );
+}
+function IconBell() {
+  return (
+    <svg {...ICON_PROPS}>
+      <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
+      <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
+    </svg>
+  );
+}
+function IconCpu() {
+  return (
+    <svg {...ICON_PROPS}>
+      <rect x="4" y="4" width="16" height="16" rx="2" />
+      <rect x="9" y="9" width="6" height="6" />
+      <path d="M9 2v2M15 2v2M9 20v2M15 20v2M2 9h2M2 15h2M20 9h2M20 15h2" />
+    </svg>
+  );
+}
+function IconTrending() {
+  return (
+    <svg {...ICON_PROPS}>
+      <polyline points="22 7 13.5 15.5 8.5 10.5 2 17" />
+      <polyline points="16 7 22 7 22 13" />
+    </svg>
+  );
+}
+function IconZap() {
+  return (
+    <svg {...ICON_PROPS}>
+      <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+    </svg>
   );
 }
 
