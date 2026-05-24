@@ -44,7 +44,7 @@ export default function Header() {
 
   async function signOut() {
     await fetch("/api/auth/logout", { method: "POST" });
-    router.replace("/login");
+    router.replace("/");
   }
 
   if (!me) return null;

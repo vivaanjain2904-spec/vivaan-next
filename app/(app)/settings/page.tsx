@@ -103,7 +103,7 @@ export default function SettingsPage() {
   }
   async function signOut() {
     await fetch("/api/auth/logout", { method: "POST" });
-    router.replace("/login");
+    router.replace("/");
   }
 
   if (!user) return <div className="panel text-muted text-sm">Loading…</div>;
@@ -327,7 +327,14 @@ export default function SettingsPage() {
       <div className="panel">
         <div className="flex flex-wrap gap-2 items-center justify-between">
           <button onClick={resetAccount} className="btn-red">🔄 Reset Paper Account</button>
-          <button onClick={signOut} className="btn-ghost">🚪 Sign Out</button>
+          <div className="flex flex-wrap gap-2">
+            <a href="/welcome" className="btn-ghost">🏠 View landing page</a>
+            <button onClick={signOut} className="btn-ghost">🚪 Sign Out</button>
+          </div>
+        </div>
+        <div className="text-muted text-[11px] mt-3">
+          Sign Out now sends you to the public landing page (vaelor.dev) instead of the login screen,
+          so you can see what new users see. Tap the landing button to preview it without signing out.
         </div>
       </div>
     </>
