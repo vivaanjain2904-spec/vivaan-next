@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { sql } from "@/lib/db";
 import { requireSession } from "@/lib/auth";
 import { getQuotes, getChart } from "@/lib/yfinance";
-import { computeSignal } from "@/lib/signal";
+import { computeSignal, computeMarketRegime, computeTrailingStop, sizingMultiplier } from "@/lib/signal";
 import { alertUser } from "@/lib/ntfy";
 import { alpacaSell, alpacaBuy } from "@/lib/alpaca";
 
@@ -125,20 +125,57 @@ export async function POST() {
   }
 
   // ──────────────────────────────────────────────────────────
+  //  TRAILING STOPS — ratchet stop_loss up as positions run
+  // ──────────────────────────────────────────────────────────
+  const ratcheted: { ticker: string; oldSL: number; newSL: number; pnlPct: number }[] = [];
+  for (const p of positions) {
+    const q = quotes[p.ticker]; if (!q) continue;
+    const avg = Number(p.avg_cost);
+    if (!avg) continue;
+    const pnlFrac = (q.price - avg) / avg;
+    const curSL   = p.stop_loss != null ? Number(p.stop_loss) : 0.05;
+    const newSL   = computeTrailingStop(curSL, pnlFrac);
+    if (newSL < curSL - 1e-9) {
+      await sql`UPDATE positions SET stop_loss=${newSL}
+        WHERE user_id=${user.id} AND ticker=${p.ticker}`;
+      ratcheted.push({ ticker: p.ticker, oldSL: curSL, newSL, pnlPct: pnlFrac * 100 });
+      const lockPct = newSL <= 0 ? `+${(-newSL * 100).toFixed(0)}%` : "break-even";
+      const title = `🔒 ${p.ticker} trailing stop tightened`;
+      const body  = `${p.ticker} up ${(pnlFrac * 100).toFixed(1)}% — moved stop to lock in ${lockPct}.`;
+      await sql`INSERT INTO notifications (user_id, ticker, kind, title, body)
+        VALUES (${user.id}, ${p.ticker}, 'trail', ${title}, ${body})`;
+      await alertUser(user, title, body);
+    }
+  }
+
+  // ──────────────────────────────────────────────────────────
+  //  MARKET REGIME — skip new auto-buys when SPY is in a downtrend
+  // ──────────────────────────────────────────────────────────
+  let regime: "bull" | "bear" | "neutral" = "neutral";
+  try {
+    const spyChart = await getChart("SPY", "6mo").catch(() => []);
+    regime = computeMarketRegime(spyChart);
+  } catch {}
+
+  // ──────────────────────────────────────────────────────────
   //  AUTO-BUY: strong bullish ML signal on a watchlist stock
   // ──────────────────────────────────────────────────────────
   const heldSet = new Set(positions.map(p => p.ticker));
-  if (user.auto_trade) {
+  if (user.auto_trade && regime !== "bear") {
     const cashR = await sql`SELECT cash FROM users WHERE id=${user.id}`;
     let cash = Number(cashR.rows[0]?.cash ?? 0);
-    const buySignalThr = 1 - Number(user.ml_threshold);
+    // Stricter than `1 - ml_threshold`: only fire on genuinely high-conviction
+    // bullish signals (drop probability under 20%, vs. the previous ~35%).
+    const buySignalThr = Math.min(0.20, 1 - Number(user.ml_threshold));
 
     for (const w of watch) {
       if (heldSet.has(w.ticker)) continue;
       const prob = ml[w.ticker];
       if (prob == null || prob > buySignalThr) continue;
       const q = quotes[w.ticker]; if (!q?.price) continue;
-      const buyBudget = Number(user.auto_buy_size) || 500;
+      // Conviction-based sizing: stronger signal (lower dropProb) → bigger position, capped at 1.5x.
+      const baseBudget = Number(user.auto_buy_size) || 500;
+      const buyBudget = baseBudget * sizingMultiplier(prob);
       const qty = Math.floor(buyBudget / q.price);
       if (qty < 1) continue;
       const cost = qty * q.price;
@@ -168,8 +205,10 @@ export async function POST() {
       orders.push({ ticker: w.ticker, ok: true, side: "BUY", orderId: alpacaOrderId,
                     qty, price: q.price, mode,
                     reason: `ML buy signal (${(prob*100).toFixed(0)}%)` });
+      const sizeMult = sizingMultiplier(prob);
       const title = `🤖 Auto-bought ${qty} ${w.ticker}`;
-      const body  = `ML drop-prob ${(prob*100).toFixed(0)}% — strong buy.` +
+      const body  = `ML drop-prob ${(prob*100).toFixed(0)}% — high-conviction buy` +
+                    ` (${sizeMult.toFixed(2)}x size, ${regime} regime).` +
                     (alpacaOrderId ? ` Alpaca order ${alpacaOrderId}.` : " (paper-only).") +
                     ` Cost $${cost.toFixed(2)}.`;
       await sql`INSERT INTO notifications (user_id, ticker, kind, title, body)
@@ -185,6 +224,8 @@ export async function POST() {
   return NextResponse.json({
     ok: true,
     checked: tickers.length,
+    regime,
+    trailing_ratchets: ratcheted,
     breaches, orders,
     msg: breaches.length || orders.length
       ? `${breaches.length} alert(s), ${orders.length} order(s) executed.`

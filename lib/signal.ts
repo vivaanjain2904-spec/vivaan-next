@@ -146,3 +146,65 @@ function computeRSI(closes: number[], period = 14): number {
   const rs = avgG / avgL;
   return 100 - 100 / (1 + rs);
 }
+
+/**
+ * Market regime from a price series (typically SPY).
+ * Bull = price >= 50-day MA AND 50-day MA rising
+ * Bear = price < 50-day MA
+ * Neutral otherwise.
+ * Used to suppress new auto-buys during clear downtrends — most strategies
+ * lose money trying to fight the tape.
+ */
+export function computeMarketRegime(candles: Candle[]): "bull" | "bear" | "neutral" {
+  if (candles.length < 60) return "neutral";
+  const closes = candles.map(c => c.c);
+  const ma50 = avg(closes.slice(-50));
+  const ma50Prior = avg(closes.slice(-60, -10)); // 50-day MA from 10 days ago
+  const last = closes[closes.length - 1];
+
+  if (last < ma50) return "bear";
+  if (last >= ma50 && ma50 >= ma50Prior) return "bull";
+  return "neutral";
+}
+
+/**
+ * Ratchet logic for trailing stops. Given the current stop_loss fraction
+ * and the current unrealized P&L % (as a 0..1 fraction), return the
+ * recommended new stop_loss. NEVER widens — only tightens.
+ *
+ * stop_loss convention: stop fires at avg_cost * (1 - stop_loss).
+ *   - 0.05 = fires 5% below cost (normal stop)
+ *   - 0     = fires AT break-even
+ *   - -0.10 = fires at 110% of cost (profit-lock)
+ *
+ * Ladder:
+ *   pnl >= 50% → lock in 30% gain   (sl = -0.30)
+ *   pnl >= 35% → lock in 15% gain   (sl = -0.15)
+ *   pnl >= 20% → lock in 5% gain    (sl = -0.05)
+ *   pnl >= 10% → move stop to break-even (sl = 0)
+ *   otherwise → keep current
+ */
+export function computeTrailingStop(currentSL: number, pnlFrac: number): number {
+  let target = currentSL;
+  if (pnlFrac >= 0.50)      target = Math.min(target, -0.30);
+  else if (pnlFrac >= 0.35) target = Math.min(target, -0.15);
+  else if (pnlFrac >= 0.20) target = Math.min(target, -0.05);
+  else if (pnlFrac >= 0.10) target = Math.min(target, 0);
+  return target;
+}
+
+/**
+ * Position-size multiplier based on signal conviction.
+ * Stronger bullish signal (lower dropProb) → larger position, capped at 1.5x.
+ * Used to scale the base auto_buy_size at decision time.
+ *
+ *   dropProb 0.20 → 1.00x   (entry threshold)
+ *   dropProb 0.10 → 1.25x
+ *   dropProb 0.05 → 1.40x
+ *   dropProb 0.00 → 1.50x   (max)
+ */
+export function sizingMultiplier(dropProb: number): number {
+  if (dropProb >= 0.20) return 1.0;
+  const conviction = Math.max(0, Math.min(1, (0.20 - dropProb) / 0.20)); // 0..1
+  return 1.0 + conviction * 0.5;
+}

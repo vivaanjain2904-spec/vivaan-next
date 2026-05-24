@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { sql, initDb } from "@/lib/db";
 import { getQuotes, getChart } from "@/lib/yfinance";
-import { computeSignal } from "@/lib/signal";
+import { computeSignal, computeMarketRegime, computeTrailingStop, sizingMultiplier } from "@/lib/signal";
 import { alertUser } from "@/lib/ntfy";
 import { alpacaSell, alpacaBuy } from "@/lib/alpaca";
 
@@ -101,9 +101,37 @@ export async function GET(req: Request) {
     return `🤖 Paper auto-sold ${qty} ${ticker} (${reason})`;
   }
 
+  // Market regime — fetch SPY once for all users in this run
+  let regime: "bull" | "bear" | "neutral" = "neutral";
+  try {
+    const spy = await getChart("SPY", "6mo").catch(() => []);
+    regime = computeMarketRegime(spy);
+  } catch {}
+
   let total = 0;
   for (const { user, positions, watch } of userData) {
     const sent: Array<{ title: string; body: string }> = [];
+
+    // ── Trailing stops: ratchet stop_loss up as positions run ──
+    for (const p of positions) {
+      const q = quotes[p.ticker]; if (!q) continue;
+      const avg = Number(p.avg_cost); if (!avg) continue;
+      const pnlFrac = (q.price - avg) / avg;
+      const curSL = p.stop_loss != null ? Number(p.stop_loss) : 0.05;
+      const newSL = computeTrailingStop(curSL, pnlFrac);
+      if (newSL < curSL - 1e-9) {
+        await sql`UPDATE positions SET stop_loss=${newSL}
+          WHERE user_id=${user.id} AND ticker=${p.ticker}`;
+        const lockLabel = newSL <= 0 ? `+${(-newSL * 100).toFixed(0)}%` : "break-even";
+        const title = `🔒 ${p.ticker} trailing stop tightened`;
+        const body  = `${p.ticker} up ${(pnlFrac * 100).toFixed(1)}% — moved stop to lock in ${lockLabel}.`;
+        await sql`INSERT INTO notifications (user_id, ticker, kind, title, body)
+          VALUES (${user.id}, ${p.ticker}, 'trail', ${title}, ${body})`;
+        sent.push({ title, body }); total++;
+        // Update local p.stop_loss so the stop-hit check below uses the new value
+        p.stop_loss = newSL;
+      }
+    }
 
     // Holdings: stop / target / ML
     for (const p of positions) {
@@ -176,18 +204,21 @@ export async function GET(req: Request) {
     }
 
     // ───── AUTO-BUY: strong bullish ML signal on watchlist ─────
-    if (user.auto_trade) {
+    // Skip new auto-buys entirely during bear regime — don't fight the tape.
+    if (user.auto_trade && regime !== "bear") {
       const cashR = await sql`SELECT cash FROM users WHERE id=${user.id}`;
       let cash = Number(cashR.rows[0]?.cash ?? 0);
       const heldSet = new Set(positions.map((p: any) => p.ticker));
-      const buyThr = 1 - Number(user.ml_threshold);
+      // Stricter than `1 - ml_threshold`: require high-conviction signals (< 20% drop prob)
+      const buyThr = Math.min(0.20, 1 - Number(user.ml_threshold));
 
       for (const w of watch) {
         if (heldSet.has(w.ticker)) continue;
         const prob = ml[w.ticker];
         if (prob == null || prob > buyThr) continue;
         const q = quotes[w.ticker]; if (!q?.price) continue;
-        const buyBudget = Number(user.auto_buy_size) || 500;
+        // Conviction-based sizing: stronger signal = bigger position, capped at 1.5x.
+        const buyBudget = (Number(user.auto_buy_size) || 500) * sizingMultiplier(prob);
         const qty = Math.floor(buyBudget / q.price);
         if (qty < 1) continue;
         const cost = qty * q.price;
