@@ -13,14 +13,39 @@ type PortfolioRes = {
   ml: Record<string, number>;
 };
 
-const FEATURE_CARDS = [
-  { href: "/trade",       emoji: "📈", title: "Trade",       desc: "Buy and sell stocks with real-time quotes" },
-  { href: "/performance", emoji: "📊", title: "Performance", desc: "Win rate, P&L, alpha vs S&P 500" },
-  { href: "/watchlist",   emoji: "👁",  title: "Watchlist",  desc: "Track stocks you want to keep an eye on" },
-  { href: "/charts",      emoji: "📈", title: "Charts",      desc: "Analyse price movements interactively" },
-  { href: "/screener",    emoji: "🔍", title: "Screener",    desc: "Filter stocks by price, volume, and metrics" },
-  { href: "/backtest",    emoji: "⚡", title: "Backtest",    desc: "Test your strategy against historical data" },
-] as const;
+type NavCard = { href: string; iconKey: "trade" | "perf" | "watch" | "charts" | "screen" | "back"; title: string; desc: string };
+
+const FEATURE_CARDS: NavCard[] = [
+  { href: "/trade",       iconKey: "trade",  title: "Trade",       desc: "Buy and sell stocks with real-time quotes" },
+  { href: "/performance", iconKey: "perf",   title: "Performance", desc: "Win rate, P&L, alpha vs S&P 500" },
+  { href: "/watchlist",   iconKey: "watch",  title: "Watchlist",   desc: "Track stocks you want to keep an eye on" },
+  { href: "/charts",      iconKey: "charts", title: "Charts",      desc: "Analyse price movements interactively" },
+  { href: "/screener",    iconKey: "screen", title: "Screener",    desc: "Filter stocks by price, volume, and metrics" },
+  { href: "/backtest",    iconKey: "back",   title: "Backtest",    desc: "Test your strategy against historical data" },
+];
+
+const NAV_ICON_PROPS = {
+  viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 1.75,
+  strokeLinecap: "round" as const, strokeLinejoin: "round" as const,
+  className: "w-5 h-5",
+};
+
+function NavCardIcon({ k }: { k: NavCard["iconKey"] }) {
+  switch (k) {
+    case "trade":
+      return (<svg {...NAV_ICON_PROPS}><polyline points="22 7 13.5 15.5 8.5 10.5 2 17" /><polyline points="16 7 22 7 22 13" /></svg>);
+    case "perf":
+      return (<svg {...NAV_ICON_PROPS}><path d="M3 3v18h18" /><rect x="7" y="13" width="3" height="5" /><rect x="12" y="9" width="3" height="9" /><rect x="17" y="6" width="3" height="12" /></svg>);
+    case "watch":
+      return (<svg {...NAV_ICON_PROPS}><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3" /></svg>);
+    case "charts":
+      return (<svg {...NAV_ICON_PROPS}><path d="M3 3v18h18" /><path d="M7 15l4-6 4 4 4-7" /></svg>);
+    case "screen":
+      return (<svg {...NAV_ICON_PROPS}><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" /></svg>);
+    case "back":
+      return (<svg {...NAV_ICON_PROPS}><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" /></svg>);
+  }
+}
 
 export default function OverviewPage() {
   const [d, setD] = useState<PortfolioRes | null>(null);
@@ -142,10 +167,12 @@ export default function OverviewPage() {
     <div className="mt-8">
       <div className="section-h-lg">Quick Navigation</div>
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-        {FEATURE_CARDS.map(a => (
+        {FEATURE_CARDS.map((a, i) => (
           <a key={a.href} href={a.href}
-             className="panel-hover flex flex-col gap-2 cursor-pointer group">
-            <span className="text-2xl">{a.emoji}</span>
+             className={`panel-hover flex flex-col gap-3 cursor-pointer group animate-rise delay-${(i + 1) as 1|2|3|4|5|6}`}>
+            <div className="w-10 h-10 rounded-lg bg-mint/10 border border-mint/20 flex items-center justify-center text-mint group-hover:bg-mint/15 group-hover:border-mint/40 group-hover:scale-105 transition-all duration-200">
+              <NavCardIcon k={a.iconKey} />
+            </div>
             <div className="text-sm font-semibold text-ink group-hover:text-mint transition-colors">{a.title}</div>
             <div className="text-xs text-muted leading-relaxed">{a.desc}</div>
           </a>

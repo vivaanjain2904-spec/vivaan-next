@@ -15,19 +15,52 @@ export default function Logo({ size = "sm", showTagline = true, className = "" }
   const s = SIZES[size];
   const stacked = size === "lg";
 
+  /* The diamond:
+     - Outer wrapper rotated 45° (same as before)
+     - NEW: gradient border (mint → vaelor green) instead of flat vaelor border
+       achieved via two stacked divs (mask trick) — gives a premium "lit" edge
+     - NEW: faint inner radial fill so the V has subtle depth
+     - Animated breathing mint drop-shadow (unchanged from previous polish) */
   const diamond = (
     <div
       className="relative shrink-0 animate-logo-glow"
       style={{ width: s.box, height: s.box, transform: "rotate(45deg)" }}
     >
-      <div className="absolute inset-0 border border-vaelor" />
+      {/* Gradient border layer */}
+      <div
+        className="absolute inset-0"
+        style={{
+          background: "linear-gradient(135deg, #34d399 0%, #1f7a52 60%, #34d399 100%)",
+          padding: 1,
+          WebkitMask:
+            "linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0)",
+          WebkitMaskComposite: "xor",
+          maskComposite: "exclude",
+        } as React.CSSProperties}
+      />
+      {/* Faint inner glow fill */}
+      <div
+        className="absolute inset-[1px]"
+        style={{
+          background:
+            "radial-gradient(circle at 30% 30%, rgba(52,211,153,0.10), transparent 60%)",
+        }}
+      />
+      {/* The V mark */}
       <div
         className="absolute inset-0 flex items-center justify-center"
         style={{ transform: "rotate(-45deg)" }}
       >
         <span
-          className="font-vaelor-mark text-vaelor leading-none"
-          style={{ fontSize: s.v, paddingBottom: 1 }}
+          className="font-vaelor-mark leading-none"
+          style={{
+            fontSize: s.v,
+            paddingBottom: 1,
+            background: "linear-gradient(180deg, #34d399, #1f7a52)",
+            WebkitBackgroundClip: "text",
+            WebkitTextFillColor: "transparent",
+            backgroundClip: "text",
+          }}
         >
           V
         </span>
