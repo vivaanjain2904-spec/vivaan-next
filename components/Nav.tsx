@@ -4,14 +4,15 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 
 const PAGES = [
-  { href: "/overview",  label: "Overview"  },
-  { href: "/trade",     label: "Trade"     },
-  { href: "/screener",  label: "Screener"  },
-  { href: "/watchlist", label: "Watchlist" },
-  { href: "/charts",    label: "Charts"    },
-  { href: "/backtest",  label: "Backtest"  },
-  { href: "/news",      label: "News"      },
-  { href: "/settings",  label: "Settings"  },
+  { href: "/overview",    label: "Overview"    },
+  { href: "/trade",       label: "Trade"       },
+  { href: "/screener",    label: "Screener"    },
+  { href: "/watchlist",   label: "Watchlist"   },
+  { href: "/charts",      label: "Charts"      },
+  { href: "/backtest",    label: "Backtest"    },
+  { href: "/performance", label: "Performance" },
+  { href: "/news",        label: "News"        },
+  { href: "/settings",    label: "Settings"    },
 ];
 
 const BOTTOM_MAIN = [
@@ -22,10 +23,11 @@ const BOTTOM_MAIN = [
 ];
 
 const MORE_PAGES = [
-  { href: "/screener",  label: "Screener", emoji: "🔍" },
-  { href: "/backtest",  label: "Backtest", emoji: "⚡" },
-  { href: "/news",      label: "News",     emoji: "📰" },
-  { href: "/settings",  label: "Settings", emoji: "⚙️" },
+  { href: "/performance", label: "Performance", emoji: "📊" },
+  { href: "/screener",    label: "Screener",    emoji: "🔍" },
+  { href: "/backtest",    label: "Backtest",    emoji: "⚡" },
+  { href: "/news",        label: "News",        emoji: "📰" },
+  { href: "/settings",    label: "Settings",    emoji: "⚙️" },
 ];
 
 function NavIcon({ href }: { href: string }) {

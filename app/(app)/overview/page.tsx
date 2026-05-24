@@ -14,12 +14,12 @@ type PortfolioRes = {
 };
 
 const FEATURE_CARDS = [
-  { href: "/trade",     emoji: "📈", title: "Trade",       desc: "Buy and sell stocks with real-time quotes" },
-  { href: "/watchlist", emoji: "👁",  title: "Watchlist",  desc: "Track stocks you want to keep an eye on" },
-  { href: "/charts",    emoji: "📊", title: "Charts",      desc: "Analyse price movements interactively" },
-  { href: "/screener",  emoji: "🔍", title: "Screener",    desc: "Filter stocks by price, volume, and metrics" },
-  { href: "/news",      emoji: "📰", title: "Market News", desc: "Stay on top of the latest headlines" },
-  { href: "/backtest",  emoji: "⚡", title: "Backtest",    desc: "Test your strategy against historical data" },
+  { href: "/trade",       emoji: "📈", title: "Trade",       desc: "Buy and sell stocks with real-time quotes" },
+  { href: "/performance", emoji: "📊", title: "Performance", desc: "Win rate, P&L, alpha vs S&P 500" },
+  { href: "/watchlist",   emoji: "👁",  title: "Watchlist",  desc: "Track stocks you want to keep an eye on" },
+  { href: "/charts",      emoji: "📈", title: "Charts",      desc: "Analyse price movements interactively" },
+  { href: "/screener",    emoji: "🔍", title: "Screener",    desc: "Filter stocks by price, volume, and metrics" },
+  { href: "/backtest",    emoji: "⚡", title: "Backtest",    desc: "Test your strategy against historical data" },
 ] as const;
 
 export default function OverviewPage() {
