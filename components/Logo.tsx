@@ -17,7 +17,7 @@ export default function Logo({ size = "sm", showTagline = true, className = "" }
 
   const diamond = (
     <div
-      className="relative shrink-0"
+      className="relative shrink-0 animate-logo-glow"
       style={{ width: s.box, height: s.box, transform: "rotate(45deg)" }}
     >
       <div className="absolute inset-0 border border-vaelor" />

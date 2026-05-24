@@ -183,3 +183,94 @@
   background-image: radial-gradient(rgba(58,58,63,.3) 1px, transparent 1px);
   background-size: 18px 18px;
 }
+
+/* ─────────────────────────────────────────────────────────────
+   MOTION PRIMITIVES — used across landing & signed-in pages
+   All respect prefers-reduced-motion via the global override.
+   ───────────────────────────────────────────────────────────── */
+
+/* Generic fade-in (no movement) */
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+.animate-fade-in { animation: fadeIn .6s ease-out both; }
+
+/* Bigger fade-up than the default — used for hero copy */
+@keyframes riseIn {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.animate-rise { animation: riseIn .7s cubic-bezier(.16,.84,.44,1) both; }
+
+/* Stagger delays so children appear in sequence */
+.delay-1 { animation-delay: .10s; }
+.delay-2 { animation-delay: .20s; }
+.delay-3 { animation-delay: .30s; }
+.delay-4 { animation-delay: .40s; }
+.delay-5 { animation-delay: .55s; }
+.delay-6 { animation-delay: .70s; }
+
+/* Soft floating motion — used for the hero logo / mock dashboard */
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-6px); }
+}
+.animate-float { animation: float 5s ease-in-out infinite; }
+
+/* Pulsing mint glow — for the primary CTA and live indicators */
+@keyframes pulseGlow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(52,211,153,0.0), 0 4px 18px -4px rgba(52,211,153,0.45); }
+  50%      { box-shadow: 0 0 0 8px rgba(52,211,153,0.0), 0 8px 32px -4px rgba(52,211,153,0.65); }
+}
+.animate-glow { animation: pulseGlow 2.6s ease-in-out infinite; }
+
+/* Subtle pulsing dot — for "live" / market-open indicators */
+@keyframes pulseDot {
+  0%, 100% { opacity: 1;   transform: scale(1);   }
+  50%      { opacity: .55; transform: scale(1.15); }
+}
+.animate-pulse-dot { animation: pulseDot 1.6s ease-in-out infinite; }
+
+/* Animated sweep across a row (used on demo holdings to feel "live") */
+@keyframes liveSweep {
+  0%   { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+.animate-live-sweep {
+  background: linear-gradient(90deg, transparent, rgba(52,211,153,0.06), transparent);
+  background-size: 200% 100%;
+  animation: liveSweep 4s linear infinite;
+}
+
+/* Drifting background gradient — adds life to hero & landing sections */
+@keyframes auraDrift {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  50%      { transform: translate3d(0, -8px, 0) scale(1.04); }
+}
+.animate-aura { animation: auraDrift 14s ease-in-out infinite; }
+
+/* Slow rotation for orbital ambient elements */
+@keyframes orbit {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+.animate-orbit { animation: orbit 30s linear infinite; }
+
+/* Logo ambient pulse — adds a soft mint glow that breathes around the diamond */
+@keyframes logoGlow {
+  0%, 100% { filter: drop-shadow(0 0 6px rgba(52,211,153,0.20)); }
+  50%      { filter: drop-shadow(0 0 16px rgba(52,211,153,0.45)); }
+}
+.animate-logo-glow { animation: logoGlow 4s ease-in-out infinite; }
+
+/* Smooth count-up shimmer (decorative only, paired with tabular-nums) */
+@keyframes valueShine {
+  0%, 100% { background-position: -200% center; }
+  50%      { background-position: 200% center; }
+}
+.animate-value-shine {
+  background: linear-gradient(90deg, currentColor 0%, rgba(255,255,255,0.55) 50%, currentColor 100%);
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: valueShine 3s ease-in-out infinite;
+}

@@ -56,40 +56,60 @@ function NavBar() {
 function Hero() {
   return (
     <section className="relative overflow-hidden border-b border-border1/50">
-      {/* Ambient mint glow */}
+      {/* Ambient drifting aura — two layers for depth */}
+      <div className="absolute inset-0 pointer-events-none animate-aura">
+        <div
+          className="absolute inset-0"
+          style={{
+            background:
+              "radial-gradient(ellipse 60% 50% at 50% 0%, rgba(52,211,153,0.18), transparent 60%)",
+          }}
+        />
+      </div>
       <div
-        className="absolute inset-0 pointer-events-none"
-        style={{
-          background:
-            "radial-gradient(ellipse at 50% 0%, rgba(52,211,153,0.10), transparent 55%)",
-        }}
-      />
+        className="absolute inset-0 pointer-events-none animate-aura"
+        style={{ animationDelay: "2s" }}
+      >
+        <div
+          className="absolute inset-0"
+          style={{
+            background:
+              "radial-gradient(ellipse 55% 40% at 78% 8%, rgba(31,122,82,0.18), transparent 65%)",
+          }}
+        />
+      </div>
       <div className="absolute inset-0 dot-grid opacity-25 pointer-events-none" />
 
+      {/* Orbital ring decoration (very subtle) */}
+      <div className="absolute -top-40 left-1/2 -translate-x-1/2 w-[700px] h-[700px] pointer-events-none opacity-30 hidden sm:block animate-orbit">
+        <div className="absolute inset-0 rounded-full border border-mint/10" />
+        <div className="absolute inset-12 rounded-full border border-mint/8" />
+      </div>
+
       <div className="relative max-w-7xl mx-auto px-5 sm:px-8 pt-16 sm:pt-24 pb-12 sm:pb-20 text-center">
-        <div className="inline-flex items-center gap-2 pill-mint mb-8">
-          <span className="text-mint">●</span>
+        <div className="inline-flex items-center gap-2 pill-mint mb-8 animate-rise">
+          <span className="text-mint animate-pulse-dot">●</span>
           ATR-based smart stops · ML signals · Auto-execution
         </div>
 
-        <h1 className="font-sans text-4xl sm:text-6xl lg:text-7xl font-bold tracking-tight mb-6 leading-[1.05]">
+        <h1 className="font-sans text-4xl sm:text-6xl lg:text-7xl font-bold tracking-tight mb-6 leading-[1.05] animate-rise delay-1">
           Paper trading <br className="sm:hidden" />
           with{" "}
-          <span className="bg-gradient-to-r from-mint to-vaelor bg-clip-text text-transparent">
+          <span className="bg-gradient-to-r from-mint via-mint to-vaelor bg-clip-text text-transparent">
             real edge.
           </span>
         </h1>
 
-        <p className="text-base sm:text-xl text-ink2 max-w-2xl mx-auto mb-10 leading-relaxed">
+        <p className="text-base sm:text-xl text-ink2 max-w-2xl mx-auto mb-10 leading-relaxed animate-rise delay-2">
           Volatility-adjusted stops, walk-forward ML signals, and hands-off
           execution via Alpaca. Built for traders who can&apos;t stare at a screen
           all day.
         </p>
 
-        <div className="flex flex-col sm:flex-row gap-3 justify-center mb-14 sm:mb-20">
+        <div className="flex flex-col sm:flex-row gap-3 justify-center mb-14 sm:mb-20 animate-rise delay-3">
           <Link
             href="/register"
-            className="btn-mint text-base !px-7 !py-3.5 inline-flex items-center justify-center gap-2 group"
+            className="btn-mint text-base !px-7 !py-3.5 inline-flex items-center justify-center gap-2 group animate-glow"
           >
             Start free
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
@@ -106,7 +126,9 @@ function Hero() {
           </Link>
         </div>
 
-        <MockDashboard />
+        <div className="animate-rise delay-4">
+          <MockDashboard />
+        </div>
       </div>
     </section>
   );
@@ -128,36 +150,24 @@ function FeaturesSection() {
         </div>
 
         <div className="grid sm:grid-cols-2 gap-4 sm:gap-5">
-          <FeatureCard
-            icon={<IconTarget />}
+          <FeatureCard delay={1} icon={<IconTarget />}
             title="ATR-based smart stops"
-            desc="No more flat 5% stops shaking you out of NVDA and letting KO bleed. Each position's stop-loss & take-profit comes from that stock's own 14-day ATR. Trailing logic ratchets the stop tighter as positions run — up 20%, you're locked in for +5% no matter what."
-          />
-          <FeatureCard
-            icon={<IconChart />}
+            desc="No more flat 5% stops shaking you out of NVDA and letting KO bleed. Each position's stop-loss & take-profit comes from that stock's own 14-day ATR. Trailing logic ratchets the stop tighter as positions run — up 20%, you're locked in for +5% no matter what." />
+          <FeatureCard delay={2} icon={<IconChart />}
             title="ML drop-probability signals"
-            desc="Every 15 minutes, every holding gets a 0–1 risk score blending RSI, 20/50-day moving averages, and 1-month momentum. When risk crosses your threshold, you know before the bleed. Walk-forward validated — no curve-fitted backtests."
-          />
-          <FeatureCard
-            icon={<IconBell />}
+            desc="Every 15 minutes, every holding gets a 0–1 risk score blending RSI, 20/50-day moving averages, and 1-month momentum. When risk crosses your threshold, you know before the bleed. Walk-forward validated — no curve-fitted backtests." />
+          <FeatureCard delay={3} icon={<IconBell />}
             title="Multi-channel alerts"
-            desc="Email (via Resend), mobile push (via ntfy), Discord webhooks, and browser notifications. All four fire when a position trips a threshold. ≤15-minute latency during US market hours. Configure once, never miss again."
-          />
-          <FeatureCard
-            icon={<IconCpu />}
+            desc="Email (via Resend), mobile push (via ntfy), Discord webhooks, and browser notifications. All four fire when a position trips a threshold. ≤15-minute latency during US market hours. Configure once, never miss again." />
+          <FeatureCard delay={4} icon={<IconCpu />}
             title="Hands-off execution"
-            desc="Connect a free Alpaca paper account and Vaelor fires sells automatically when signals trip. Conviction-based sizing — stronger signals get bigger bets, weaker ones get smaller. Bear-regime filter pauses new buys when SPY breaks its 50-day MA."
-          />
-          <FeatureCard
-            icon={<IconTrending />}
+            desc="Connect a free Alpaca paper account and Vaelor fires sells automatically when signals trip. Conviction-based sizing — stronger signals get bigger bets, weaker ones get smaller. Bear-regime filter pauses new buys when SPY breaks its 50-day MA." />
+          <FeatureCard delay={5} icon={<IconTrending />}
             title="Real performance dashboard"
-            desc="Win rate, profit factor, alpha vs S&P 500, realized vs unrealized P&L, top winners/losers, per-position contribution. Backed by FIFO-matched closed round-trips — no smoothing, no cherry-picking."
-          />
-          <FeatureCard
-            icon={<IconZap />}
+            desc="Win rate, profit factor, alpha vs S&P 500, realized vs unrealized P&L, top winners/losers, per-position contribution. Backed by FIFO-matched closed round-trips — no smoothing, no cherry-picking." />
+          <FeatureCard delay={6} icon={<IconZap />}
             title="Built-in backtest engine"
-            desc="Replay any strategy on real historical data. Compare to buy-and-hold. See whether your edge is actually edge or just lucky timing. Test before you trust."
-          />
+            desc="Replay any strategy on real historical data. Compare to buy-and-hold. See whether your edge is actually edge or just lucky timing. Test before you trust." />
         </div>
       </div>
     </section>
@@ -278,10 +288,15 @@ function FooterBar() {
 
 /* ──────── Sub-components ──────── */
 
-function FeatureCard({ icon, title, desc }: { icon: React.ReactNode; title: string; desc: string }) {
+function FeatureCard({ icon, title, desc, delay }: { icon: React.ReactNode; title: string; desc: string; delay?: 1|2|3|4|5|6 }) {
   return (
-    <div className="panel hover:border-mint/30 transition-all duration-200 group">
-      <div className="w-11 h-11 rounded-lg bg-mint/10 border border-mint/20 flex items-center justify-center text-mint mb-5 group-hover:bg-mint/15 group-hover:border-mint/30 transition-colors">
+    <div className={[
+      "panel hover:border-mint/30 transition-all duration-300 group cursor-default",
+      "hover:translate-y-[-2px] hover:shadow-[0_8px_24px_-8px_rgba(52,211,153,0.18)]",
+      "animate-rise",
+      delay ? `delay-${delay}` : "",
+    ].join(" ")}>
+      <div className="w-11 h-11 rounded-lg bg-mint/10 border border-mint/20 flex items-center justify-center text-mint mb-5 group-hover:bg-mint/15 group-hover:border-mint/40 group-hover:scale-105 transition-all duration-200">
         {icon}
       </div>
       <h3 className="text-lg font-semibold text-ink mb-2 group-hover:text-mint transition-colors">
@@ -373,13 +388,17 @@ function Step({ n, title, desc }: { n: number; title: string; desc: string }) {
 function MockDashboard() {
   return (
     <div className="relative max-w-5xl mx-auto">
-      <div className="panel p-4 sm:p-6 text-left relative shadow-2xl shadow-mint/5">
+      <div className="panel p-4 sm:p-6 text-left relative shadow-2xl shadow-mint/10 backdrop-blur-sm">
         {/* Browser chrome */}
         <div className="flex items-center gap-2 mb-4">
           <span className="w-2.5 h-2.5 rounded-full bg-red/50" />
           <span className="w-2.5 h-2.5 rounded-full bg-amber/50" />
           <span className="w-2.5 h-2.5 rounded-full bg-mint/50" />
           <span className="text-[10px] text-muted font-mono ml-2">vaelor.dev/overview</span>
+          <span className="ml-auto inline-flex items-center gap-1.5 text-[9px] font-semibold uppercase tracking-wider text-mint">
+            <span className="w-1.5 h-1.5 rounded-full bg-mint animate-pulse-dot" />
+            Live
+          </span>
         </div>
 
         {/* KPIs */}
