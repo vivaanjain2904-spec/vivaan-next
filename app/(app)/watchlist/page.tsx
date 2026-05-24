@@ -2,8 +2,10 @@
 import { useEffect, useState } from "react";
 import StockSearch from "@/components/StockSearch";
 import { fp } from "@/lib/format";
+import { useTickerNames } from "@/lib/useTickerNames";
 
 export default function WatchlistPage() {
+  const tickerNames = useTickerNames();
   const [items, setItems] = useState<any[]>([]);
   const [quotes, setQuotes] = useState<Record<string, any>>({});
   const [ml, setMl] = useState<Record<string, number>>({});
@@ -56,7 +58,14 @@ export default function WatchlistPage() {
                 const q = quotes[w.ticker];
                 return (
                   <tr key={w.ticker} className="border-t border-border1/60 hover:bg-mint/5">
-                    <td className="px-4 py-3"><span className="tk-tag">{w.ticker}</span></td>
+                    <td className="px-4 py-3">
+                      <div className="flex flex-col gap-0.5">
+                        <span className="tk-tag w-fit">{w.ticker}</span>
+                        {tickerNames[w.ticker] && (
+                          <span className="font-sans text-[10px] text-muted truncate max-w-[200px]">{tickerNames[w.ticker]}</span>
+                        )}
+                      </div>
+                    </td>
                     <td className="px-4 py-3 text-right">{q ? fp(q.price) : "—"}</td>
                     <td className="px-4 py-3 text-right text-mint">{w.alert_above ? fp(Number(w.alert_above)) : "—"}</td>
                     <td className="px-4 py-3 text-right text-red">{w.alert_below ? fp(Number(w.alert_below)) : "—"}</td>

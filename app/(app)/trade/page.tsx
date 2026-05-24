@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import StockSearch from "@/components/StockSearch";
 import Chart from "@/components/Chart";
 import { fp, fpp, clr } from "@/lib/format";
+import { useTickerNames } from "@/lib/useTickerNames";
 
 type Quote = { ticker: string; price: number; pct: number; hi52: number; lo52: number; name: string };
 
@@ -28,6 +29,7 @@ const FEATURED = [
 ];
 
 export default function TradePage() {
+  const tickerNames = useTickerNames();
   const [tab, setTab] = useState<"buy" | "sell" | "history">("buy");
   const [ticker, setTicker] = useState("");
   const [quote, setQuote]   = useState<Quote | null>(null);
@@ -163,6 +165,7 @@ export default function TradePage() {
             const pnl = ((q.price - p.avg_cost) / p.avg_cost) * 100;
             return (
               <PositionRow key={p.ticker} p={p} q={q} pnl={pnl}
+                name={tickerNames[p.ticker]}
                 onTrade={async () => { await loadAll(); }} onMsg={setMsg} />
             );
           })}
@@ -192,7 +195,12 @@ export default function TradePage() {
                     <td className={`px-4 py-2.5 font-bold ${t.side === "BUY" ? "text-mint" : "text-red"}`}>
                       {t.side === "BUY" ? "🟢 BUY" : "🔴 SELL"}
                     </td>
-                    <td className="px-4 py-2.5"><span className="tk-tag">{t.ticker}</span></td>
+                    <td className="px-4 py-2.5">
+                      <span className="tk-tag mr-2">{t.ticker}</span>
+                      {tickerNames[t.ticker] && (
+                        <span className="font-sans text-muted text-[11px]">{tickerNames[t.ticker]}</span>
+                      )}
+                    </td>
                     <td className="px-4 py-2.5 text-right">{t.qty}</td>
                     <td className="px-4 py-2.5 text-right">{fp(Number(t.price))}</td>
                   </tr>
@@ -434,8 +442,8 @@ function QuoteCard({ q, positions, cash, onTrade, onMsg }: {
   );
 }
 
-function PositionRow({ p, q, pnl, onTrade, onMsg }: {
-  p: any; q: Quote; pnl: number;
+function PositionRow({ p, q, pnl, name, onTrade, onMsg }: {
+  p: any; q: Quote; pnl: number; name?: string;
   onTrade: () => void; onMsg: (m: { ok: boolean; text: string }) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -466,13 +474,18 @@ function PositionRow({ p, q, pnl, onTrade, onMsg }: {
   return (
     <div className="panel mb-3">
       <button onClick={() => setOpen(!open)}
-              className="w-full flex items-center justify-between text-left">
-        <div className="flex items-center gap-3">
-          <span className="tk-tag text-base">{p.ticker}</span>
+              className="w-full flex items-center justify-between text-left gap-3">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="flex flex-col items-start gap-0.5 min-w-0">
+            <span className="tk-tag text-base">{p.ticker}</span>
+            {name && (
+              <span className="text-[11px] text-muted truncate max-w-[180px] sm:max-w-[260px]">{name}</span>
+            )}
+          </div>
           <span className="font-mono">{fp(q.price)}</span>
           <span className={`font-mono font-bold ${clr(pnl)}`}>{fpp(pnl)}</span>
         </div>
-        <div className="text-xs text-muted font-mono">{p.qty} sh · {fp(q.price * Number(p.qty))}</div>
+        <div className="text-xs text-muted font-mono whitespace-nowrap">{p.qty} sh · {fp(q.price * Number(p.qty))}</div>
       </button>
       {open && (
         <div className="grid md:grid-cols-2 gap-4 mt-5 pt-5 border-t border-border1">
