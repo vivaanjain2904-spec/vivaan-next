@@ -21,25 +21,54 @@
 
 @layer base {
   html, body {
-    background: #0a0a0b;
+    background-color: #08090b;
     color: #fafafa;
     font-family: 'Inter', system-ui, sans-serif;
     font-feature-settings: 'cv02','cv03','cv04','cv11';
     -webkit-font-smoothing: antialiased;
+    /* Subtle ambient gradient from top + soft mint vignette at top-center,
+       barely visible but adds depth across every page */
+    background-image:
+      radial-gradient(ellipse 60% 35% at 50% -10%, rgba(52,211,153,0.07), transparent 60%),
+      radial-gradient(ellipse 80% 50% at 80% -10%, rgba(31,122,82,0.06), transparent 60%),
+      linear-gradient(180deg, #0a0b0d 0%, #08090b 100%);
+    background-attachment: fixed;
   }
   body { min-height: 100vh; }
   ::-webkit-scrollbar { width: 6px; height: 6px; }
-  ::-webkit-scrollbar-thumb { background: #3a3a3f; border-radius: 3px; }
+  ::-webkit-scrollbar-thumb { background: #3a3a3f; border-radius: 3px; transition: background .2s; }
+  ::-webkit-scrollbar-thumb:hover { background: #4a4a4f; }
   ::-webkit-scrollbar-track { background: transparent; }
   ::selection { background: rgba(52,211,153,.25); }
+
+  /* Smooth scroll for anchor nav (landing page) */
+  html { scroll-behavior: smooth; }
+
+  /* Respect reduced-motion preference */
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
 }
 
 @layer components {
+  /* Panels — subtle vertical gradient + hairline top highlight, soft shadow.
+     Same colors as before, just with more depth and polish. */
   .panel {
-    @apply bg-card border border-border1 rounded-xl p-5;
+    @apply relative bg-card border border-border1 rounded-xl p-5;
+    background-image: linear-gradient(180deg, rgba(255,255,255,0.02), transparent 30%);
+    box-shadow: 0 1px 0 rgba(255,255,255,0.03) inset, 0 1px 2px rgba(0,0,0,0.4);
   }
   .panel-hover {
-    @apply panel transition-colors hover:border-border2;
+    @apply panel transition-all duration-200;
+  }
+  .panel-hover:hover {
+    border-color: #3a3a3f;
+    box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset, 0 6px 20px -8px rgba(52,211,153,0.10);
+    transform: translateY(-1px);
   }
 
   /* Section header — minimal, no overdesign */
@@ -57,14 +86,30 @@
       bg-card2 text-ink border border-border1;
   }
 
-  /* Buttons — Robinhood-style */
+  /* Buttons — Robinhood-style with refined hover lift */
   .btn {
     @apply inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg
-      text-[13px] font-semibold transition-colors;
+      text-[13px] font-semibold transition-all duration-200 select-none;
   }
-  .btn-mint  { @apply btn bg-mint text-bg hover:bg-mintd; }
-  .btn-red   { @apply btn bg-redd/15 text-red border border-redd/30 hover:bg-redd/25; }
-  .btn-ghost { @apply btn bg-card2 text-ink2 border border-border1 hover:text-ink hover:border-border2; }
+  .btn-mint  {
+    @apply btn bg-mint text-bg hover:bg-mintd;
+    box-shadow: 0 1px 0 rgba(255,255,255,0.15) inset, 0 4px 12px -4px rgba(52,211,153,0.35);
+  }
+  .btn-mint:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 1px 0 rgba(255,255,255,0.2) inset, 0 6px 18px -4px rgba(52,211,153,0.5);
+  }
+  .btn-mint:active { transform: translateY(0); }
+
+  .btn-red {
+    @apply btn bg-redd/15 text-red border border-redd/30 hover:bg-redd/25;
+  }
+  .btn-ghost {
+    @apply btn bg-card2 text-ink2 border border-border1 hover:text-ink hover:border-border2;
+  }
+  .btn-ghost:hover {
+    box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset;
+  }
 
   .input {
     @apply w-full bg-card2 border border-border1 rounded-lg px-3 py-2.5 text-sm text-ink

@@ -49,7 +49,7 @@ export default function Header() {
 
   if (!me) return null;
   return (
-    <header className="flex items-center justify-between py-4 mb-6 border-b border-border1 gap-3">
+    <header className="flex items-center justify-between py-4 mb-6 border-b border-border1/70 gap-3 sticky top-0 z-30 bg-bg/80 backdrop-blur-md -mx-5 sm:-mx-8 px-5 sm:px-8">
       <Logo size="sm" showTagline />
       <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
         <MarketStatus />

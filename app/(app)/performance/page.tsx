@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { fp, fpp, clr } from "@/lib/format";
 import { Kpi } from "@/components/Kpi";
+import { useTickerNames } from "@/lib/useTickerNames";
 
 type Performance = {
   startingCash: number; cash: number; totalValue: number; totalCost: number;
@@ -16,6 +17,7 @@ type Performance = {
 };
 
 export default function PerformancePage() {
+  const tickerNames = useTickerNames();
   const [d, setD] = useState<Performance | null>(null);
   const [err, setErr] = useState("");
 
@@ -125,7 +127,12 @@ export default function PerformancePage() {
               <tbody className="font-mono">
                 {d.positions.map((p: any) => (
                   <tr key={p.ticker} className="border-b border-border1/50 last:border-b-0 hover:bg-card2/50">
-                    <td className="px-5 py-3 font-sans text-ink font-semibold">{p.ticker}</td>
+                    <td className="px-5 py-3 font-sans">
+                      <div className="text-ink font-semibold">{p.ticker}</div>
+                      {tickerNames[p.ticker] && (
+                        <div className="text-muted text-[11px] truncate max-w-[180px]">{tickerNames[p.ticker]}</div>
+                      )}
+                    </td>
                     <td className="px-3 py-3 text-right text-ink2">{p.qty}</td>
                     <td className="px-3 py-3 text-right text-ink2">{fp(p.avg_cost)}</td>
                     <td className="px-3 py-3 text-right text-ink">{fp(p.price)}</td>
@@ -145,8 +152,8 @@ export default function PerformancePage() {
       {/* Best / Worst closed trades */}
       {d.closedRoundTrips > 0 && (
         <div className="grid md:grid-cols-2 gap-4 mb-7">
-          <ClosedTradesPanel title="Top Winners" trades={d.bestTrades} color="mint" />
-          <ClosedTradesPanel title="Top Losers"  trades={d.worstTrades} color="red"  />
+          <ClosedTradesPanel title="Top Winners" trades={d.bestTrades} color="mint" names={tickerNames} />
+          <ClosedTradesPanel title="Top Losers"  trades={d.worstTrades} color="red"  names={tickerNames} />
         </div>
       )}
 
@@ -170,8 +177,8 @@ export default function PerformancePage() {
   );
 }
 
-function ClosedTradesPanel({ title, trades, color }:
-  { title: string; trades: any[]; color: "mint" | "red" }) {
+function ClosedTradesPanel({ title, trades, color, names }:
+  { title: string; trades: any[]; color: "mint" | "red"; names: Record<string, string> }) {
   if (!trades.length) return null;
   return (
     <div>
@@ -181,9 +188,14 @@ function ClosedTradesPanel({ title, trades, color }:
           <tbody className="font-mono">
             {trades.map((t, i) => (
               <tr key={i} className="border-b border-border1/40 last:border-b-0">
-                <td className="px-4 py-2.5">
-                  <span className="font-sans font-semibold text-ink">{t.ticker}</span>
-                  <span className="text-muted text-[11px] ml-2">{t.qty} sh</span>
+                <td className="px-4 py-2.5 font-sans">
+                  <div className="flex items-baseline gap-2">
+                    <span className="font-semibold text-ink">{t.ticker}</span>
+                    <span className="text-muted text-[11px]">{t.qty} sh</span>
+                  </div>
+                  {names[t.ticker] && (
+                    <div className="text-muted text-[10px] truncate max-w-[160px]">{names[t.ticker]}</div>
+                  )}
                 </td>
                 <td className="px-4 py-2.5 text-right text-ink2 text-xs">
                   {fp(t.buyPrice)} → {fp(t.sellPrice)}
