@@ -3,32 +3,34 @@ import { sql, initDb } from "@/lib/db";
 import { requireSession } from "@/lib/auth";
 import { getQuotes, getChart, daysUntilEarnings } from "@/lib/yfinance";
 import { UNIVERSE } from "@/lib/universe";
-import { computeSignal, computeMarketRegime, computeSmartStops, sizingMultiplier } from "@/lib/signal";
+import { computeSignal, computeMarketRegime, computeSmartStops, computeTrailingStop, sizingMultiplier } from "@/lib/signal";
 import { alertUser } from "@/lib/ntfy";
-import { alpacaBuy } from "@/lib/alpaca";
+import { alpacaBuy, alpacaSell } from "@/lib/alpaca";
 
 export const maxDuration = 60;
 
 /**
- * Fully autonomous discovery + buy cycle.
+ * Fully autonomous buy + sell cycle, end-to-end.
  *
- * Caller: the user clicking "Run Auto-Trade Cycle" or a daily GitHub Actions cron.
- * What it does:
- *   1. Loads the user's autonomous_mode settings + current portfolio
- *   2. Bear-regime check (skip if SPY below 50-day MA)
- *   3. Scans up to 80 most-liquid universe stocks (filtered down from 540+)
- *   4. Computes the multi-factor signal for each
- *   5. Ranks BUY candidates (dropProb < 0.15) by signal strength
- *   6. Applies safety rails: max positions, max position %, cash reserve,
- *      max new buys per cycle, earnings window, not-already-held
- *   7. Sizes each buy by conviction (1.0–1.5x base) and the max_pos_pct cap
- *   8. Executes paper buys + optional Alpaca leg + fires alerts
+ * Caller: "Run Auto-Trade Cycle" button on Overview.
+ * One click does the lot:
+ *   A. SELL pass — for every held position:
+ *        * Compute fresh signal
+ *        * If stop-loss / take-profit / ML threshold trips → sell + alert
+ *        * If pos has run >10%, ratchet trailing stop tighter
+ *   B. BUY pass — scan ~80 most-promising stocks from the 540+ universe:
+ *        * Filter by liquidity (price ≥ $5, vol ≥ 200k)
+ *        * Pre-rank by recent weakness
+ *        * Multi-factor signal on top 80
+ *        * Buy top 3 with conviction-based sizing + safety rails
+ *   C. Return combined summary of all actions taken.
  *
- * The existing /api/cron/check-alerts handles SELLS — this endpoint is BUY-side only.
+ * The 15-min alert cron still runs sells continuously in the background —
+ * this button is for triggering the WHOLE cycle on demand, not just buys.
  */
-const MAX_CANDIDATES_TO_SCORE = 80;        // limit chart fetches
-const STRONG_BUY_THRESHOLD = 0.15;         // dropProb must be ≤ this to consider
-const MAX_NEW_BUYS_PER_CYCLE = 3;          // hard cap
+const MAX_CANDIDATES_TO_SCORE = 80;
+const STRONG_BUY_THRESHOLD = 0.20;         // loosened from 0.15 so more buys actually fire
+const MAX_NEW_BUYS_PER_CYCLE = 3;
 
 export async function POST() {
   const s = await requireSession();
@@ -50,21 +52,105 @@ export async function POST() {
   }
 
   // Current portfolio for safety rails
-  const pos = await sql`SELECT ticker, qty, avg_cost FROM positions WHERE user_id=${user.id} AND qty > 0`;
-  const positions = pos.rows;
-  const heldSet = new Set(positions.map((p: any) => p.ticker));
-  const openCount = positions.length;
+  const pos = await sql`SELECT ticker, qty, avg_cost, stop_loss, take_profit FROM positions WHERE user_id=${user.id} AND qty > 0`;
+  let positions: any[] = pos.rows;
+  let heldSet = new Set(positions.map((p: any) => p.ticker));
   const maxPositions = Number(user.max_positions) || 15;
   const maxPosPct = Number(user.max_pos_pct) || 0.08;
   const reservePct = Number(user.cash_reserve_pct) || 0.15;
+  const mlThreshold = Number(user.ml_threshold) || 0.65;
+
+  // ═══════════════════════════════════════════════════════════════════════
+  //  PASS A — SELL: check every held position for stop/target/ML triggers
+  // ═══════════════════════════════════════════════════════════════════════
+  const sellOrders: any[] = [];
+  let cashChange = 0;
+
+  if (positions.length > 0) {
+    const tickers = positions.map((p: any) => p.ticker);
+    const heldQuotes = await getQuotes(tickers);
+
+    for (const p of positions) {
+      const q = heldQuotes[p.ticker];
+      if (!q?.price) continue;
+      const px = q.price;
+      const avg = Number(p.avg_cost);
+      if (!avg) continue;
+
+      const sl = p.stop_loss != null ? Number(p.stop_loss) : null;
+      const tp = p.take_profit != null ? Number(p.take_profit) : null;
+      const stopHit = sl != null && px <= avg * (1 - sl);
+      const tgtHit  = tp != null && px >= avg * (1 + tp);
+
+      // Quick ML check via chart
+      let mlHit = false;
+      let signal: any = null;
+      try {
+        const candles = await getChart(p.ticker, "3mo");
+        signal = computeSignal(candles);
+        if (signal && signal.dropProb >= mlThreshold) mlHit = true;
+      } catch {}
+
+      if (stopHit || tgtHit || mlHit) {
+        const reason = stopHit ? "stop-loss" : tgtHit ? "take-profit" : "ml-signal";
+        const qty = Number(p.qty);
+        const proceeds = qty * px;
+
+        // Alpaca leg
+        let alpacaOrderId: string | undefined;
+        if (user.alpaca_key && user.alpaca_secret) {
+          const r = await alpacaSell({ key: user.alpaca_key, secret: user.alpaca_secret }, p.ticker, qty);
+          if (r.ok) alpacaOrderId = r.orderId;
+        }
+
+        // Mirror paper
+        try {
+          await sql`DELETE FROM positions WHERE user_id=${user.id} AND ticker=${p.ticker}`;
+          await sql`UPDATE users SET cash = cash + ${proceeds} WHERE id=${user.id}`;
+          await sql`INSERT INTO trades (user_id, ticker, side, qty, price)
+            VALUES (${user.id}, ${p.ticker}, 'SELL', ${qty}, ${px})`;
+          cashChange += proceeds;
+        } catch {}
+
+        sellOrders.push({ ticker: p.ticker, qty, price: px, reason,
+                          mode: alpacaOrderId ? "alpaca" : "paper", orderId: alpacaOrderId });
+
+        const title = stopHit ? `🔴 Auto-sold ${p.ticker} (stop)` :
+                      tgtHit ? `🟢 Auto-sold ${p.ticker} (target)` :
+                               `⚠️ Auto-sold ${p.ticker} (ML)`;
+        const body = `${qty} shares @ $${px.toFixed(2)} · ${reason}` +
+          (alpacaOrderId ? ` · Alpaca order ${alpacaOrderId}` : " · paper");
+        await sql`INSERT INTO notifications (user_id, ticker, kind, title, body)
+          VALUES (${user.id}, ${p.ticker}, 'auto_sell', ${title}, ${body})`;
+        await alertUser(user as any, title, body);
+      } else if (signal) {
+        // No sell — check trailing stop ratchet
+        const pnlFrac = (px - avg) / avg;
+        const curSL = p.stop_loss != null ? Number(p.stop_loss) : 0.05;
+        const newSL = computeTrailingStop(curSL, pnlFrac);
+        if (newSL < curSL - 1e-9) {
+          await sql`UPDATE positions SET stop_loss=${newSL}
+            WHERE user_id=${user.id} AND ticker=${p.ticker}`;
+        }
+      }
+    }
+
+    // Refresh positions list after sells
+    if (sellOrders.length > 0) {
+      const refreshed = await sql`SELECT ticker, qty, avg_cost FROM positions WHERE user_id=${user.id} AND qty > 0`;
+      positions = refreshed.rows;
+      heldSet = new Set(positions.map((p: any) => p.ticker));
+    }
+  }
 
   // Total equity (cash + position market value, valued at avg_cost for speed)
-  let cash = Number(user.cash);
+  let cash = Number(user.cash) + cashChange;
   let positionValue = 0;
   for (const p of positions) positionValue += Number(p.qty) * Number(p.avg_cost);
   const totalEquity = cash + positionValue;
   const maxDeployable = Math.max(0, totalEquity * (1 - reservePct) - positionValue);
   const cashAvailable = Math.min(cash, maxDeployable);
+  const openCount = positions.length;
 
   if (openCount >= maxPositions) {
     return NextResponse.json({
@@ -73,7 +159,8 @@ export async function POST() {
       skipped: "max_positions_reached",
       open: openCount,
       max: maxPositions,
-      msg: `Already at max positions (${openCount}/${maxPositions}). No new buys.`,
+      sells: sellOrders,
+      msg: `Sold ${sellOrders.length}. Already at max positions (${openCount}/${maxPositions}). No new buys.`,
     });
   }
   if (cashAvailable <= 50) {
@@ -81,8 +168,8 @@ export async function POST() {
       ok: true,
       cycled: true,
       skipped: "cash_below_reserve",
-      cash, cashAvailable,
-      msg: `Cash reserve protected. ${cashAvailable.toFixed(0)} available for new buys.`,
+      cash, cashAvailable, sells: sellOrders,
+      msg: `Sold ${sellOrders.length}. Cash reserve protected.`,
     });
   }
 
@@ -97,23 +184,21 @@ export async function POST() {
       ok: true,
       cycled: true,
       skipped: "bear_regime",
-      msg: "SPY below its 50-day MA. Pausing new buys. Existing sells still fire via cron.",
+      sells: sellOrders,
+      msg: `Sold ${sellOrders.length}. SPY in bear regime — pausing new buys.`,
     });
   }
 
   // ── Build candidate list from universe ──
-  // Strategy: pre-filter by quote (price >= $5, liquid volume) before fetching chart data
-  // to keep total compute under 60s.
-  const universe = user.auto_scan_universe
-    ? UNIVERSE
-    : []; // if scan disabled, this endpoint is just a no-op (only watchlist runs via existing cron)
+  const universe = user.auto_scan_universe ? UNIVERSE : [];
 
   if (!universe.length) {
     return NextResponse.json({
       ok: true,
       cycled: true,
       skipped: "scan_disabled",
-      msg: "Universe scan is off. Toggle 'Scan universe beyond watchlist' to discover new buys.",
+      sells: sellOrders,
+      msg: `Sold ${sellOrders.length}. Universe scan is off — toggle it on in Settings.`,
     });
   }
 
@@ -163,7 +248,8 @@ export async function POST() {
       cycled: true,
       scanned: quotedCandidates.length,
       candidates: 0,
-      msg: "No high-conviction buys found in this cycle.",
+      sells: sellOrders,
+      msg: `Sold ${sellOrders.length}. No high-conviction buys found in this cycle.`,
     });
   }
 
@@ -229,22 +315,26 @@ export async function POST() {
     await alertUser(user as any, title, body);
   }
 
+  const boughtCount = orders.filter(o => o.ok).length;
   return NextResponse.json({
     ok: true,
     cycled: true,
     scanned: quotedCandidates.length,
     candidates: scored.length,
-    bought: orders.filter(o => o.ok).length,
+    bought: boughtCount,
+    sold: sellOrders.length,
     regime,
     orders,
+    sells: sellOrders,
     safetyRails: {
       maxPositions, openBefore: openCount,
       maxPosPct, reservePct,
       maxNewBuys: MAX_NEW_BUYS_PER_CYCLE,
       threshold: STRONG_BUY_THRESHOLD,
     },
-    msg: orders.length
-      ? `Bought ${orders.filter(o => o.ok).length} new position(s) from ${scored.length} candidates.`
-      : `${scored.length} candidates passed the bar but none fit cash/sizing rules.`,
+    msg: [
+      sellOrders.length > 0 ? `Sold ${sellOrders.length}` : null,
+      boughtCount > 0 ? `Bought ${boughtCount}` : (scored.length ? `${scored.length} candidates didn't fit sizing rules` : null),
+    ].filter(Boolean).join(" · ") || "No actions this cycle.",
   });
 }

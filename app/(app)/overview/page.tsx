@@ -195,26 +195,43 @@ export default function OverviewPage() {
     </div>
   );
 
-  /* ── Autonomous cycle result panel ── */
+  /* ── Autonomous cycle result panel — shows both sells and buys ── */
   const AutoBanner = autoRes ? (
     <div className={[
       "panel mb-6 text-sm border-l-2",
-      autoRes.bought > 0 ? "border-l-mint" :
+      (autoRes.bought > 0 || autoRes.sold > 0) ? "border-l-mint" :
       autoRes.skipped ? "border-l-amber" : "border-l-border2",
     ].join(" ")}>
       <div className="text-ink font-semibold mb-1">
-        {autoRes.bought > 0 ? `🤖 Autonomous trader bought ${autoRes.bought} new position(s)` :
-         autoRes.skipped ? `⏸ Autonomous trader paused: ${autoRes.skipped.replace(/_/g, " ")}` :
-         "🤖 Autonomous cycle complete"}
+        {(autoRes.bought > 0 || autoRes.sold > 0)
+          ? `🤖 Auto-cycle: ${autoRes.sold ?? 0} sold · ${autoRes.bought ?? 0} bought`
+          : autoRes.skipped
+            ? `⏸ Auto-cycle paused: ${autoRes.skipped.replace(/_/g, " ")}`
+            : "🤖 Auto-cycle complete · no actions"}
       </div>
       <div className="text-xs text-muted">{autoRes.msg}</div>
-      {autoRes.orders?.length > 0 && (
-        <div className="mt-2 font-mono text-[11px] text-mint space-y-0.5">
-          {autoRes.orders.filter((o: any) => o.ok).map((o: any) => (
-            <div key={o.ticker}>
-              ✓ {o.qty} × {o.ticker} @ ${o.price?.toFixed(2)} · drop-prob {(o.dropProb * 100).toFixed(0)}% · {o.mode}
-            </div>
-          ))}
+      {autoRes.sells?.length > 0 && (
+        <div className="mt-3 text-[11px] font-mono">
+          <div className="text-red font-semibold mb-1">Sells:</div>
+          <div className="text-red/90 space-y-0.5">
+            {autoRes.sells.map((o: any) => (
+              <div key={o.ticker}>
+                ✗ {o.qty} × {o.ticker} @ ${o.price?.toFixed(2)} · {o.reason} · {o.mode}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      {autoRes.orders?.filter((o: any) => o.ok).length > 0 && (
+        <div className="mt-3 text-[11px] font-mono">
+          <div className="text-mint font-semibold mb-1">Buys:</div>
+          <div className="text-mint space-y-0.5">
+            {autoRes.orders.filter((o: any) => o.ok).map((o: any) => (
+              <div key={o.ticker}>
+                ✓ {o.qty} × {o.ticker} @ ${o.price?.toFixed(2)} · drop-prob {(o.dropProb * 100).toFixed(0)}% · {o.mode}
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </div>
