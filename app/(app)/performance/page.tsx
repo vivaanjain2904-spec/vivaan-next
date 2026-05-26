@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { fp, fpp, clr } from "@/lib/format";
 import { Kpi } from "@/components/Kpi";
+import TickerLogo from "@/components/TickerLogo";
 import { useTickerNames } from "@/lib/useTickerNames";
 
 type Performance = {
@@ -128,10 +129,15 @@ export default function PerformancePage() {
                 {d.positions.map((p: any) => (
                   <tr key={p.ticker} className="border-b border-border1/50 last:border-b-0 hover:bg-card2/50">
                     <td className="px-5 py-3 font-sans">
-                      <div className="text-ink font-semibold">{p.ticker}</div>
-                      {tickerNames[p.ticker] && (
-                        <div className="text-muted text-[11px] truncate max-w-[180px]">{tickerNames[p.ticker]}</div>
-                      )}
+                      <div className="flex items-center gap-2.5">
+                        <TickerLogo ticker={p.ticker} size="sm" />
+                        <div className="min-w-0">
+                          <div className="text-ink font-semibold">{p.ticker}</div>
+                          {tickerNames[p.ticker] && (
+                            <div className="text-muted text-[11px] truncate max-w-[180px]">{tickerNames[p.ticker]}</div>
+                          )}
+                        </div>
+                      </div>
                     </td>
                     <td className="px-3 py-3 text-right text-ink2">{p.qty}</td>
                     <td className="px-3 py-3 text-right text-ink2">{fp(p.avg_cost)}</td>

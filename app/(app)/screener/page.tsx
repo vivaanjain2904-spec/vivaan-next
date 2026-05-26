@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Sparkline from "@/components/Sparkline";
+import TickerLogo from "@/components/TickerLogo";
 import { TableSkeleton } from "@/components/Skeleton";
 import { fp, fpp, clr, fmtVol } from "@/lib/format";
 
@@ -219,8 +220,13 @@ export default function ScreenerPage() {
                   <tr key={r.ticker} className="border-b border-border1/40 last:border-b-0 hover:bg-card2/50 transition-colors animate-fade-up">
                     <td className="px-5 py-3 text-muted text-[11px]">{i + 1}</td>
                     <td className="px-3 py-3 font-sans">
-                      <div className="text-ink font-semibold">{r.ticker}</div>
-                      {r.name && <div className="text-muted text-[11px] truncate max-w-[140px]">{r.name}</div>}
+                      <div className="flex items-center gap-2.5">
+                        <TickerLogo ticker={r.ticker} size="sm" />
+                        <div className="min-w-0">
+                          <div className="text-ink font-semibold">{r.ticker}</div>
+                          {r.name && <div className="text-muted text-[11px] truncate max-w-[140px]">{r.name}</div>}
+                        </div>
+                      </div>
                     </td>
                     <td className="px-2 py-3"><Sparkline ticker={r.ticker} /></td>
                     <td className="px-3 py-3 text-right text-ink">{fp(r.price)}</td>

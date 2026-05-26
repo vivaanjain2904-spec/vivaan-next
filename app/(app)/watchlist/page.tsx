@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import StockSearch from "@/components/StockSearch";
+import TickerLogo from "@/components/TickerLogo";
 import { fp } from "@/lib/format";
 import { useTickerNames } from "@/lib/useTickerNames";
 
@@ -59,11 +60,14 @@ export default function WatchlistPage() {
                 return (
                   <tr key={w.ticker} className="border-t border-border1/60 hover:bg-mint/5">
                     <td className="px-4 py-3">
-                      <div className="flex flex-col gap-0.5">
-                        <span className="tk-tag w-fit">{w.ticker}</span>
-                        {tickerNames[w.ticker] && (
-                          <span className="font-sans text-[10px] text-muted truncate max-w-[200px]">{tickerNames[w.ticker]}</span>
-                        )}
+                      <div className="flex items-center gap-2.5">
+                        <TickerLogo ticker={w.ticker} size="sm" />
+                        <div className="min-w-0">
+                          <span className="tk-tag w-fit">{w.ticker}</span>
+                          {tickerNames[w.ticker] && (
+                            <div className="font-sans text-[10px] text-muted truncate max-w-[200px] mt-0.5">{tickerNames[w.ticker]}</div>
+                          )}
+                        </div>
                       </div>
                     </td>
                     <td className="px-4 py-3 text-right">{q ? fp(q.price) : "—"}</td>
