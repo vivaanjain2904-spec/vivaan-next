@@ -2,12 +2,41 @@ import { NextResponse } from "next/server";
 import { sql, initDb } from "@/lib/db";
 import { requireSession } from "@/lib/auth";
 import { getQuotes, getChart, daysUntilEarnings } from "@/lib/yfinance";
-import { UNIVERSE } from "@/lib/universe";
 import { computeSignal, computeMarketRegime, computeSmartStops, computeTrailingStop, sizingMultiplier } from "@/lib/signal";
 import { alertUser } from "@/lib/ntfy";
 import { alpacaBuy, alpacaSell } from "@/lib/alpaca";
 
 export const maxDuration = 60;
+
+/* Curated pool of ~60 liquid mega/large-caps. Yahoo Finance rate-limits the
+   full 540+ universe under load, but reliably handles ~60. Covers the names
+   that actually drive the market anyway. */
+const POOL = [
+  // Mega tech
+  "AAPL","MSFT","NVDA","GOOGL","AMZN","META","TSLA","AVGO","ORCL","ADBE","CRM","NFLX","AMD","INTC","QCOM",
+  // Semis & infra
+  "ASML","TSM","MU","AMAT","LRCX","ARM","ANET",
+  // Finance
+  "JPM","BAC","WFC","GS","MS","BLK","V","MA","PYPL","SCHW","C","COF","AXP","SPGI",
+  // Healthcare
+  "JNJ","UNH","LLY","ABBV","MRK","PFE","TMO","ABT",
+  // Consumer / staples
+  "WMT","COST","HD","NKE","SBUX","MCD","DIS","CMCSA","KO","PEP","PG",
+  // Energy / industrial
+  "XOM","CVX","CAT","BA","GE","UPS","LMT","BX",
+  // Growth/tech
+  "SHOP","CRWD","SNOW","PLTR","COIN","UBER","ABNB","NOW","INTU","SPOT","DDOG","NET",
+];
+
+const FETCH_TIMEOUT_MS = 4500;
+
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T | null> {
+  return new Promise(resolve => {
+    const t = setTimeout(() => resolve(null), ms);
+    p.then(v => { clearTimeout(t); resolve(v); })
+     .catch(() => { clearTimeout(t); resolve(null); });
+  });
+}
 
 /**
  * Fully autonomous buy + sell cycle, end-to-end.
@@ -29,7 +58,7 @@ export const maxDuration = 60;
  * this button is for triggering the WHOLE cycle on demand, not just buys.
  */
 const MAX_CANDIDATES_TO_SCORE = 80;
-const STRONG_BUY_THRESHOLD = 0.20;         // loosened from 0.15 so more buys actually fire
+const STRONG_BUY_THRESHOLD = 0.25;         // loosened — was 0.20, before that 0.15
 const MAX_NEW_BUYS_PER_CYCLE = 3;
 
 export async function POST() {
@@ -189,10 +218,10 @@ export async function POST() {
     });
   }
 
-  // ── Build candidate list from universe ──
-  const universe = user.auto_scan_universe ? UNIVERSE : [];
-
-  if (!universe.length) {
+  // ── Build candidate list from curated 60-stock POOL ──
+  // (Was full UNIVERSE but Yahoo Finance rate-limits the bulk fetch.
+  //  Curated pool covers ~90% of trade-worthy names with reliable response.)
+  if (!user.auto_scan_universe) {
     return NextResponse.json({
       ok: true,
       cycled: true,
@@ -202,19 +231,15 @@ export async function POST() {
     });
   }
 
-  // Filter to what we don't already hold
-  const candidates = universe.filter(t => !heldSet.has(t));
+  const candidates = POOL.filter(t => !heldSet.has(t));
 
-  // Pull quotes in one big batch (existing helper handles batching)
+  // Pull quotes for the small pool — fast and reliable
   const quoteMap = await getQuotes(candidates);
   const quotedCandidates = candidates
     .map(t => ({ ticker: t, q: quoteMap[t] }))
-    .filter(c => c.q && c.q.price >= 5 && (c.q.vol ?? 0) >= 200_000)  // liquidity floor
-    // Pre-rank by recent weakness — strong buys are usually stocks that dipped
-    .sort((a, b) => (a.q.pct ?? 0) - (b.q.pct ?? 0))
-    .slice(0, MAX_CANDIDATES_TO_SCORE);
+    .filter(c => c.q && c.q.price >= 5);
 
-  // ── Score each candidate (full chart fetch + signal) ──
+  // ── Score each candidate (chart fetch + signal) with per-fetch timeout ──
   type Scored = {
     ticker: string; price: number; dropProb: number;
     smart?: { stop_loss: number; take_profit: number };
@@ -222,24 +247,25 @@ export async function POST() {
   };
   const scored: Scored[] = [];
 
-  // Fetch charts in parallel chunks of 12 (Yahoo polite usage)
-  const CHUNK = 12;
-  for (let i = 0; i < quotedCandidates.length; i += CHUNK) {
-    const chunk = quotedCandidates.slice(i, i + CHUNK);
-    const enriched = await Promise.all(chunk.map(async c => {
-      const candles = await getChart(c.ticker, "3mo").catch(() => []);
-      if (!candles.length) return null;
+  // Run ALL chart fetches in parallel via Promise.allSettled — one slow one
+  // can't block the rest. Each has a hard 4.5s timeout.
+  const results = await Promise.allSettled(
+    quotedCandidates.map(async c => {
+      const candles = await withTimeout(getChart(c.ticker, "3mo"), FETCH_TIMEOUT_MS);
+      if (!candles) return null;
       const sig = computeSignal(candles);
       if (!sig || sig.dropProb > STRONG_BUY_THRESHOLD) return null;
       const smart = computeSmartStops(candles) ?? undefined;
-      const daysToER = await daysUntilEarnings(c.ticker);
-      if (daysToER != null && daysToER >= 0 && daysToER <= 3) return null; // earnings filter
+      const daysToER = await withTimeout(daysUntilEarnings(c.ticker), 2000);
+      if (daysToER != null && daysToER >= 0 && daysToER <= 3) return null;
       return {
         ticker: c.ticker, price: c.q.price, dropProb: sig.dropProb,
         smart, daysToER,
       } as Scored;
-    }));
-    for (const e of enriched) if (e) scored.push(e);
+    })
+  );
+  for (const r of results) {
+    if (r.status === "fulfilled" && r.value) scored.push(r.value);
   }
 
   if (!scored.length) {

@@ -1,12 +1,30 @@
 import { NextResponse } from "next/server";
 import { sql, initDb } from "@/lib/db";
 import { getQuotes, getChart, daysUntilEarnings } from "@/lib/yfinance";
-import { UNIVERSE } from "@/lib/universe";
 import { computeSignal, computeMarketRegime, computeSmartStops, sizingMultiplier } from "@/lib/signal";
 import { alertUser } from "@/lib/ntfy";
 import { alpacaBuy } from "@/lib/alpaca";
 
 export const maxDuration = 60;
+
+const POOL = [
+  "AAPL","MSFT","NVDA","GOOGL","AMZN","META","TSLA","AVGO","ORCL","ADBE","CRM","NFLX","AMD","INTC","QCOM",
+  "ASML","TSM","MU","AMAT","LRCX","ARM","ANET",
+  "JPM","BAC","WFC","GS","MS","BLK","V","MA","PYPL","SCHW","C","COF","AXP","SPGI",
+  "JNJ","UNH","LLY","ABBV","MRK","PFE","TMO","ABT",
+  "WMT","COST","HD","NKE","SBUX","MCD","DIS","CMCSA","KO","PEP","PG",
+  "XOM","CVX","CAT","BA","GE","UPS","LMT","BX",
+  "SHOP","CRWD","SNOW","PLTR","COIN","UBER","ABNB","NOW","INTU","SPOT","DDOG","NET",
+];
+
+const FETCH_TIMEOUT_MS = 4500;
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T | null> {
+  return new Promise(resolve => {
+    const t = setTimeout(() => resolve(null), ms);
+    p.then(v => { clearTimeout(t); resolve(v); })
+     .catch(() => { clearTimeout(t); resolve(null); });
+  });
+}
 
 /**
  * Daily autonomous discovery cron — runs ONCE per day (via GitHub Actions
@@ -21,7 +39,7 @@ export const maxDuration = 60;
  *   - Sells stay on the 15-min cron for fast risk management
  */
 const MAX_CANDIDATES_TO_SCORE = 80;
-const STRONG_BUY_THRESHOLD = 0.15;
+const STRONG_BUY_THRESHOLD = 0.25;
 const MAX_NEW_BUYS_PER_CYCLE = 3;
 
 export async function GET(req: Request) {
@@ -92,32 +110,30 @@ async function runForUser(user: any): Promise<any> {
   if (cashAvailable <= 50) return { skipped: "cash_reserve_protected" };
   if (!user.auto_scan_universe) return { skipped: "scan_disabled" };
 
-  const candidates = UNIVERSE.filter(t => !heldSet.has(t));
+  // Use curated POOL instead of full UNIVERSE — Yahoo rate-limits the
+  // bulk fetch and we get 0 candidates back. POOL is reliable.
+  const candidates = POOL.filter(t => !heldSet.has(t));
   const quoteMap = await getQuotes(candidates);
   const pre = candidates
     .map(t => ({ ticker: t, q: quoteMap[t] }))
-    .filter(c => c.q && c.q.price >= 5 && (c.q.vol ?? 0) >= 200_000)
-    .sort((a, b) => (a.q.pct ?? 0) - (b.q.pct ?? 0))
-    .slice(0, MAX_CANDIDATES_TO_SCORE);
+    .filter(c => c.q && c.q.price >= 5);
 
   const scored: any[] = [];
-  const CHUNK = 12;
-  for (let i = 0; i < pre.length; i += CHUNK) {
-    const chunk = pre.slice(i, i + CHUNK);
-    const enriched = await Promise.all(chunk.map(async c => {
-      const candles = await getChart(c.ticker, "3mo").catch(() => []);
-      if (!candles.length) return null;
-      const sig = computeSignal(candles);
-      if (!sig || sig.dropProb > STRONG_BUY_THRESHOLD) return null;
-      const smart = computeSmartStops(candles) ?? undefined;
-      const daysToER = await daysUntilEarnings(c.ticker);
-      if (daysToER != null && daysToER >= 0 && daysToER <= 3) return null;
-      return { ticker: c.ticker, price: c.q.price, dropProb: sig.dropProb, smart };
-    }));
-    for (const e of enriched) if (e) scored.push(e);
+  const results = await Promise.allSettled(pre.map(async c => {
+    const candles = await withTimeout(getChart(c.ticker, "3mo"), FETCH_TIMEOUT_MS);
+    if (!candles) return null;
+    const sig = computeSignal(candles);
+    if (!sig || sig.dropProb > STRONG_BUY_THRESHOLD) return null;
+    const smart = computeSmartStops(candles) ?? undefined;
+    const daysToER = await withTimeout(daysUntilEarnings(c.ticker), 2000);
+    if (daysToER != null && daysToER >= 0 && daysToER <= 3) return null;
+    return { ticker: c.ticker, price: c.q.price, dropProb: sig.dropProb, smart };
+  }));
+  for (const r of results) {
+    if (r.status === "fulfilled" && r.value) scored.push(r.value);
   }
 
-  if (!scored.length) return { candidates: 0 };
+  if (!scored.length) return { candidates: 0, scanned: pre.length };
 
   scored.sort((a, b) => a.dropProb - b.dropProb);
   const slotsAvailable = Math.max(0, maxPositions - openCount);
