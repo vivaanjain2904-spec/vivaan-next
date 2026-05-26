@@ -325,8 +325,11 @@ export default function SettingsPage() {
           )}
           {runRes.orders?.length > 0 && (
             <div className="text-mint">
-              🤖 Alpaca orders: {runRes.orders.map((o: any) =>
-                `${o.ticker} ${o.ok ? `✓ ${o.orderId}` : `✗ ${o.error}`}`).join(", ")}
+              🤖 Orders: {runRes.orders.map((o: any) => {
+                if (!o.ok) return `${o.ticker} ✗ ${o.error}`;
+                if (o.orderId) return `${o.ticker} ✓ Alpaca order ${o.orderId.slice(0, 12)}`;
+                return `${o.ticker} ✓ ${o.mode || "paper"}`;
+              }).join(", ")}
             </div>
           )}
         </div>
