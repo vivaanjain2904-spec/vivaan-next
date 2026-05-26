@@ -1,0 +1,22 @@
+name: Autonomous trader (daily)
+
+# Runs the autonomous discovery+buy cycle once a day after market open.
+# Only fires on weekdays. Existing 15-min alert cron handles sells.
+
+on:
+  schedule:
+    # 14:30 UTC = 10:30am EDT / 9:30am EST (≈30 min after open)
+    - cron: "30 14 * * 1-5"
+  workflow_dispatch:
+
+jobs:
+  trade:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run autonomous discovery cycle for all opted-in users
+        run: |
+          curl -sS -o /tmp/out.json -w "HTTP %{http_code}\n" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            https://vaelor.dev/api/cron/auto-trade
+          echo "---"
+          cat /tmp/out.json
