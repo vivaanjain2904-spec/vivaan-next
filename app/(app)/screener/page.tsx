@@ -78,9 +78,10 @@ export default function ScreenerPage() {
     const mlMap: Record<string, number> = {};
     for (const m of data.ml) mlMap[m.ticker] = m.drop_probability;
 
-    // Score every active stock with a simple, instant heuristic
-    const scored: Pick[] = data.active
-      .filter(q => q.price >= 5 && q.pct != null)
+    // Score the full universe (all 546 stocks) with a simple, instant heuristic.
+    // We have full quote data for every stock already loaded — no rate-limit risk.
+    const scored: Pick[] = data.all
+      .filter(q => q.price >= 5 && q.pct != null && (q.vol ?? 0) >= 100_000)
       // Filter to a sweet spot: slightly down or modestly up (avoid blow-offs and crashes)
       .filter(q => q.pct >= -6 && q.pct <= 3)
       .map(q => {
@@ -125,7 +126,7 @@ export default function ScreenerPage() {
       .slice(0, 20);
 
     setPicks(scored);
-    setPicksTotal({ scanned: data.active.length, candidates: scored.length });
+    setPicksTotal({ scanned: data.all.length, candidates: scored.length });
     setPicksLoading(false);
   }, [tab, data]);
 
