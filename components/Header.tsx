@@ -56,6 +56,16 @@ export default function Header() {
         <span className="pill-muted font-mono text-[11px] sm:text-[11px]">{fp(me.cash)}</span>
         {notifs > 0 && <span className="pill-mint">🔔 {notifs}</span>}
         <span className="pill-muted hidden sm:inline-flex">{me.name}</span>
+        {/* Quick way to preview the public landing without signing out */}
+        <a href="/welcome" target="_blank" rel="noreferrer"
+           title="View public landing page"
+           className="hidden sm:inline-flex items-center text-muted hover:text-mint transition-colors p-1.5 rounded-md hover:bg-card2">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75"
+               strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+            <path d="M3 9.5L12 4l9 5.5V20H3V9.5z" />
+            <path d="M9 20v-6h6v6" />
+          </svg>
+        </a>
         <button onClick={signOut}
                 className="flex items-center gap-1 text-muted hover:text-red transition-colors ml-0.5 sm:ml-1">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75"
