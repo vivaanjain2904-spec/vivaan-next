@@ -18,8 +18,9 @@ export type Signal = {
 };
 
 export function computeSignal(candles: Candle[]): Signal | null {
-  if (candles.length < 22) return null;
+  if (candles.length < 26) return null;  // need >= 26 days for MACD
   const closes = candles.map(c => c.c);
+  const volumes = candles.map(c => c.v ?? 0);
   const latest = closes[closes.length - 1];
 
   const rsi = computeRSI(closes, 14);
@@ -28,17 +29,34 @@ export function computeSignal(candles: Candle[]): Signal | null {
   const oneMoAgo = closes[Math.max(0, closes.length - 22)];
   const momentum1m = ((latest - oneMoAgo) / oneMoAgo) * 100;
 
-  // Heuristic score
+  // ── New factors (Tier 1 polish) ──
+  const macd = computeMACD(closes);             // {macd, signal, hist}
+  const bbPos = computeBollingerPos(closes);    // -1 (lower band) to +1 (upper band)
+  const volZ = computeVolumeZScore(volumes);    // recent volume z-score
+
+  // Heuristic score — original 3 factors carry 60% weight, new 3 carry 40%
   let drop = 0.4;
-  if (rsi > 75)       drop += 0.30;
-  else if (rsi > 70)  drop += 0.18;
-  else if (rsi < 25)  drop -= 0.20;
-  else if (rsi < 35)  drop -= 0.10;
-  if (latest < ma20)  drop += 0.10;
-  if (latest < ma50)  drop += 0.10;
-  if (momentum1m < -10) drop += 0.15;
-  else if (momentum1m < -5) drop += 0.05;
-  else if (momentum1m > 15) drop -= 0.10;
+  // RSI (existing)
+  if (rsi > 75)       drop += 0.22;
+  else if (rsi > 70)  drop += 0.13;
+  else if (rsi < 25)  drop -= 0.15;
+  else if (rsi < 35)  drop -= 0.08;
+  // MA position (existing)
+  if (latest < ma20)  drop += 0.07;
+  if (latest < ma50)  drop += 0.07;
+  // 1m momentum (existing)
+  if (momentum1m < -10) drop += 0.10;
+  else if (momentum1m < -5) drop += 0.04;
+  else if (momentum1m > 15) drop -= 0.08;
+  // MACD: bearish if histogram negative AND falling
+  if (macd.hist < 0 && macd.hist < macd.histPrev) drop += 0.08;
+  else if (macd.hist > 0 && macd.hist > macd.histPrev) drop -= 0.06;
+  // Bollinger: overbought near upper band, oversold near lower
+  if (bbPos > 0.9)  drop += 0.06;       // hugging upper band, mean reversion likely
+  else if (bbPos < -0.9) drop -= 0.05;  // hugging lower band, bounce likely
+  // Volume z-score: high vol on a down day = distribution = bearish
+  if (volZ > 2 && momentum1m < 0) drop += 0.06;
+  else if (volZ > 2 && momentum1m > 0) drop -= 0.04;  // high vol on up day = accumulation
   drop = Math.max(0, Math.min(1, drop));
 
   return {
@@ -49,6 +67,60 @@ export function computeSignal(candles: Candle[]): Signal | null {
     momentum1m,
     recommendation: drop <= 0.35 ? "BUY" : drop >= 0.65 ? "SELL" : "HOLD",
   };
+}
+
+/** MACD = 12-EMA - 26-EMA, signal line = 9-EMA of MACD. Returns hist + previous hist for trend. */
+function computeMACD(closes: number[]): { macd: number; signal: number; hist: number; histPrev: number } {
+  if (closes.length < 27) return { macd: 0, signal: 0, hist: 0, histPrev: 0 };
+  const ema12 = emaSeries(closes, 12);
+  const ema26 = emaSeries(closes, 26);
+  const macdSeries = ema12.map((v, i) => v - ema26[i]);
+  const signalSeries = emaSeries(macdSeries.slice(-9), 9);
+  const macd = macdSeries[macdSeries.length - 1];
+  const signal = signalSeries[signalSeries.length - 1];
+  const hist = macd - signal;
+  const macdPrev = macdSeries[macdSeries.length - 2];
+  const signalPrev = signalSeries[Math.max(0, signalSeries.length - 2)];
+  const histPrev = macdPrev - signalPrev;
+  return { macd, signal, hist, histPrev };
+}
+
+/** Position of latest price within 20-day Bollinger Band (2σ). -1 lower / 0 mid / +1 upper. */
+function computeBollingerPos(closes: number[]): number {
+  if (closes.length < 20) return 0;
+  const window = closes.slice(-20);
+  const ma = avg(window);
+  const variance = avg(window.map(c => (c - ma) ** 2));
+  const sd = Math.sqrt(variance);
+  if (sd <= 0) return 0;
+  const upper = ma + 2 * sd;
+  const lower = ma - 2 * sd;
+  const last = closes[closes.length - 1];
+  // Linear interpolation: -1 at lower band, 0 at MA, +1 at upper band
+  if (last >= ma) return Math.min(1, (last - ma) / (upper - ma));
+  return Math.max(-1, (last - ma) / (ma - lower));
+}
+
+/** Z-score of latest day's volume vs the 20-day average. */
+function computeVolumeZScore(volumes: number[]): number {
+  if (volumes.length < 20) return 0;
+  const window = volumes.slice(-20);
+  const m = avg(window);
+  const variance = avg(window.map(v => (v - m) ** 2));
+  const sd = Math.sqrt(variance);
+  if (sd <= 0) return 0;
+  return (volumes[volumes.length - 1] - m) / sd;
+}
+
+/** Standard exponential moving average, returns the full series. */
+function emaSeries(arr: number[], period: number): number[] {
+  if (arr.length === 0) return [];
+  const k = 2 / (period + 1);
+  const out: number[] = [arr[0]];
+  for (let i = 1; i < arr.length; i++) {
+    out.push(arr[i] * k + out[i - 1] * (1 - k));
+  }
+  return out;
 }
 
 function avg(arr: number[]) { return arr.reduce((a, b) => a + b, 0) / arr.length; }

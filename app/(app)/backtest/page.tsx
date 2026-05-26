@@ -7,7 +7,10 @@ import { Kpi } from "@/components/Kpi";
 type Result = {
   ticker: string; initial: number; final: number;
   return_pct: number; bh_return_pct: number; alpha_pct: number;
-  max_drawdown_pct: number; win_rate_pct: number; trade_count: number;
+  max_drawdown_pct: number; bh_max_drawdown_pct?: number;
+  win_rate_pct: number; trade_count: number;
+  sharpe?: number; sortino?: number; calmar?: number;
+  slippage_bps?: number;
   trades: { date: number; side: string; qty: number; price: number; pnl: number; reason?: string }[];
   equity: { t: number; v: number }[];
   bh_equity: { t: number; v: number }[];
@@ -96,7 +99,7 @@ export default function BacktestPage() {
 
       {result && (
         <>
-          <div className="flex flex-wrap gap-3 mb-6">
+          <div className="flex flex-wrap gap-3 mb-3">
             <Kpi label="Strategy Return"  value={fpp(result.return_pct)}
                  color={result.return_pct >= 0 ? "mint" : "red"} />
             <Kpi label="Buy & Hold"       value={fpp(result.bh_return_pct)}
@@ -106,8 +109,25 @@ export default function BacktestPage() {
                  color={result.alpha_pct >= 0 ? "mint" : "red"} />
             <Kpi label="Win Rate"         value={`${result.win_rate_pct.toFixed(0)}%`}
                  sub={`${result.trade_count} trades`} />
-            <Kpi label="Max Drawdown"     value={`-${result.max_drawdown_pct.toFixed(1)}%`} color="red" />
+            <Kpi label="Max Drawdown"     value={`-${result.max_drawdown_pct.toFixed(1)}%`}
+                 sub={result.bh_max_drawdown_pct != null ? `B&H -${result.bh_max_drawdown_pct.toFixed(1)}%` : undefined}
+                 color="red" />
             <Kpi label="Final"            value={fp(result.final)} sub={`from ${fp(result.initial)}`} />
+          </div>
+
+          {/* Risk-adjusted ratios — institutional grade metrics */}
+          <div className="flex flex-wrap gap-3 mb-6">
+            <Kpi label="Sharpe Ratio"    value={(result.sharpe ?? 0).toFixed(2)}
+                 sub="ann. return / vol · 1.0+ is good"
+                 color={(result.sharpe ?? 0) >= 1 ? "mint" : (result.sharpe ?? 0) >= 0.5 ? undefined : "red"} />
+            <Kpi label="Sortino Ratio"   value={(result.sortino ?? 0).toFixed(2)}
+                 sub="ignores upside vol"
+                 color={(result.sortino ?? 0) >= 1.5 ? "mint" : (result.sortino ?? 0) >= 0.7 ? undefined : "red"} />
+            <Kpi label="Calmar Ratio"    value={(result.calmar ?? 0).toFixed(2)}
+                 sub="CAGR / max DD"
+                 color={(result.calmar ?? 0) >= 0.5 ? "mint" : (result.calmar ?? 0) >= 0.2 ? undefined : "red"} />
+            <Kpi label="Slippage Modeled" value={`${result.slippage_bps ?? 0} bps`}
+                 sub="per fill (round-trip cost)" />
           </div>
 
           <div className="section-h">Equity Curve · Strategy vs. Buy & Hold</div>

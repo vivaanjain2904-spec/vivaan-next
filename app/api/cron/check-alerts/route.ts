@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { sql, initDb } from "@/lib/db";
-import { getQuotes, getChart } from "@/lib/yfinance";
+import { getQuotes, getChart, daysUntilEarnings } from "@/lib/yfinance";
 import { computeSignal, computeMarketRegime, computeTrailingStop, sizingMultiplier } from "@/lib/signal";
 import { alertUser } from "@/lib/ntfy";
 import { alpacaSell, alpacaBuy } from "@/lib/alpaca";
@@ -216,6 +216,9 @@ export async function GET(req: Request) {
         if (heldSet.has(w.ticker)) continue;
         const prob = ml[w.ticker];
         if (prob == null || prob > buyThr) continue;
+        // Skip if earnings are within 3 days — too much gap risk
+        const daysToER = await daysUntilEarnings(w.ticker);
+        if (daysToER != null && daysToER >= 0 && daysToER <= 3) continue;
         const q = quotes[w.ticker]; if (!q?.price) continue;
         // Conviction-based sizing: stronger signal = bigger position, capped at 1.5x.
         const buyBudget = (Number(user.auto_buy_size) || 500) * sizingMultiplier(prob);
