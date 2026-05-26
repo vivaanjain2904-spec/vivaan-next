@@ -247,14 +247,16 @@ export async function POST() {
   };
   const scored: Scored[] = [];
 
-  // Run ALL chart fetches in parallel via Promise.allSettled — one slow one
-  // can't block the rest. Each has a hard 4.5s timeout.
+  // Score every candidate that has a valid (not-clearly-bearish) signal.
+  // No absolute threshold — we'll rank by dropProb and buy the best 3,
+  // ensuring the bot always acts even when no stock is screaming "buy".
   const results = await Promise.allSettled(
     quotedCandidates.map(async c => {
       const candles = await withTimeout(getChart(c.ticker, "3mo"), FETCH_TIMEOUT_MS);
       if (!candles) return null;
       const sig = computeSignal(candles);
-      if (!sig || sig.dropProb > STRONG_BUY_THRESHOLD) return null;
+      if (!sig) return null;
+      if (sig.dropProb > 0.55) return null; // skip clearly bearish names
       const smart = computeSmartStops(candles) ?? undefined;
       const daysToER = await withTimeout(daysUntilEarnings(c.ticker), 2000);
       if (daysToER != null && daysToER >= 0 && daysToER <= 3) return null;

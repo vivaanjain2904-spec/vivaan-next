@@ -118,12 +118,18 @@ async function runForUser(user: any): Promise<any> {
     .map(t => ({ ticker: t, q: quoteMap[t] }))
     .filter(c => c.q && c.q.price >= 5);
 
+  // Score EVERY candidate that produces a valid signal (no threshold filter).
+  // We'll rank by dropProb and just buy the BEST 3 — guarantees the bot
+  // always acts, instead of waiting for an absolute threshold that may
+  // rarely trip in a bull market.
   const scored: any[] = [];
   const results = await Promise.allSettled(pre.map(async c => {
     const candles = await withTimeout(getChart(c.ticker, "3mo"), FETCH_TIMEOUT_MS);
     if (!candles) return null;
     const sig = computeSignal(candles);
-    if (!sig || sig.dropProb > STRONG_BUY_THRESHOLD) return null;
+    if (!sig) return null;
+    // Skip stocks where the model is bearish (drop prob > 0.55 = avoid)
+    if (sig.dropProb > 0.55) return null;
     const smart = computeSmartStops(candles) ?? undefined;
     const daysToER = await withTimeout(daysUntilEarnings(c.ticker), 2000);
     if (daysToER != null && daysToER >= 0 && daysToER <= 3) return null;
