@@ -16,6 +16,12 @@ export default function SettingsPage() {
   const [autoT, setAutoT] = useState(false);
   const [smartStops, setSmartStops] = useState(false);
   const [autoBuySize, setAutoBuySize] = useState(500);
+  // Autonomous mode + safety rails
+  const [autoMode, setAutoMode] = useState(false);
+  const [scanUniverse, setScanUniverse] = useState(false);
+  const [maxPositions, setMaxPositions] = useState(15);
+  const [maxPosPct, setMaxPosPct] = useState(0.08);
+  const [cashReservePct, setCashReservePct] = useState(0.15);
   const [pw, setPw] = useState("");
   const [pw2, setPw2] = useState("");
   const [msg, setMsg] = useState("");
@@ -39,6 +45,11 @@ export default function SettingsPage() {
     setAutoT(!!j.user.auto_trade);
     setSmartStops(!!j.user.smart_stops);
     setAutoBuySize(Number(j.user.auto_buy_size) || 500);
+    setAutoMode(!!j.user.autonomous_mode);
+    setScanUniverse(!!j.user.auto_scan_universe);
+    setMaxPositions(Number(j.user.max_positions) || 15);
+    setMaxPosPct(Number(j.user.max_pos_pct) || 0.08);
+    setCashReservePct(Number(j.user.cash_reserve_pct) || 0.15);
     const nj = await fetch("/api/notifications").then(r => r.json());
     setRecent(nj.recent ?? []);
   }
@@ -51,6 +62,11 @@ export default function SettingsPage() {
       alpaca_key: apKey, auto_trade: autoT,
       smart_stops: smartStops,
       auto_buy_size: autoBuySize,
+      autonomous_mode: autoMode,
+      auto_scan_universe: scanUniverse,
+      max_positions: maxPositions,
+      max_pos_pct: maxPosPct,
+      cash_reserve_pct: cashReservePct,
     };
     // Only send secret if user typed a new one (not the masked value)
     if (apSec && !apSec.startsWith("•")) body.alpaca_secret = apSec;
@@ -224,6 +240,71 @@ export default function SettingsPage() {
           </div>
         )}
         {notifyRes && <NotifyResultInline res={notifyRes} />}
+      </div>
+
+      {/* ── Fully Autonomous Mode ── */}
+      <div className="section-h">Fully Autonomous Mode</div>
+      <div className="panel mb-6">
+        <div className="rounded-lg p-3 bg-amber/10 border border-amber/30 text-[12px] text-amber mb-4">
+          <b>Heads up:</b> Autonomous mode lets Vaelor scan the 540+ stock universe and
+          buy positions on its own, with no manual approval. The signal is heuristic
+          (RSI + MA + momentum + MACD + Bollinger + volume) — <b>not a trained ML model yet</b>.
+          Always backtest your settings before relying on this in real markets. Safety rails below
+          prevent ruin, not losses.
+        </div>
+
+        <label className="flex items-start gap-2 mt-1 text-sm cursor-pointer">
+          <input type="checkbox" checked={autoMode} onChange={e => setAutoMode(e.target.checked)}
+                 className="accent-mint mt-0.5" />
+          <span>
+            <span className="text-ink font-semibold">🤖 Enable Autonomous Mode</span>
+            <span className="block text-muted text-[11px] mt-0.5">
+              Master switch. When off, "Run Auto-Trade Cycle" does nothing.
+            </span>
+          </span>
+        </label>
+
+        <label className="flex items-start gap-2 mt-3 text-sm cursor-pointer">
+          <input type="checkbox" checked={scanUniverse} onChange={e => setScanUniverse(e.target.checked)}
+                 className="accent-mint mt-0.5" />
+          <span>
+            <span className="text-ink font-semibold">Scan the full 540-stock universe</span>
+            <span className="block text-muted text-[11px] mt-0.5">
+              Each cycle, ranks the most liquid 80 stocks by signal strength and buys top picks.
+              Off = autonomous mode still works but only on your watchlist.
+            </span>
+          </span>
+        </label>
+
+        <div className="grid sm:grid-cols-3 gap-4 mt-5">
+          <div>
+            <label className="label">Max open positions: {maxPositions}</label>
+            <input type="range" min={5} max={30} value={maxPositions}
+                   onChange={e => setMaxPositions(Number(e.target.value))}
+                   className="w-full accent-mint" />
+            <div className="text-muted text-[10px]">Caps total stock count.</div>
+          </div>
+          <div>
+            <label className="label">Max % per position: {(maxPosPct * 100).toFixed(0)}%</label>
+            <input type="range" min={3} max={15} value={maxPosPct * 100}
+                   onChange={e => setMaxPosPct(Number(e.target.value) / 100)}
+                   className="w-full accent-mint" />
+            <div className="text-muted text-[10px]">Prevents one stock from going to the moon — and you with it.</div>
+          </div>
+          <div>
+            <label className="label">Cash reserve: {(cashReservePct * 100).toFixed(0)}%</label>
+            <input type="range" min={5} max={30} value={cashReservePct * 100}
+                   onChange={e => setCashReservePct(Number(e.target.value) / 100)}
+                   className="w-full accent-mint" />
+            <div className="text-muted text-[10px]">Always keeps this % in cash, never deployed.</div>
+          </div>
+        </div>
+
+        <div className="text-muted text-[11px] mt-4 leading-relaxed">
+          Per cycle (max 3 new buys): signal threshold = top 15% drop-prob conviction,
+          earnings within 3 days skipped, SPY bear-regime pauses ALL new buys,
+          ATR-based smart stops auto-set on every entry.
+        </div>
       </div>
 
       {/* Save bar */}

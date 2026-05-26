@@ -8,6 +8,7 @@ export async function POST(req: Request) {
   const {
     ntfy_topic, discord_webhook, email, ml_alerts, ml_threshold,
     alpaca_key, alpaca_secret, auto_trade, smart_stops, auto_buy_size,
+    autonomous_mode, auto_scan_universe, max_positions, max_pos_pct, cash_reserve_pct,
   } = await req.json();
   await sql`UPDATE users SET
     ntfy_topic      = ${ntfy_topic ? String(ntfy_topic).trim() : null},
@@ -19,7 +20,12 @@ export async function POST(req: Request) {
     alpaca_secret   = ${alpaca_secret ? String(alpaca_secret).trim() : null},
     auto_trade      = ${!!auto_trade},
     smart_stops     = ${!!smart_stops},
-    auto_buy_size   = ${Math.max(1, Number(auto_buy_size) || 500)}
+    auto_buy_size   = ${Math.max(1, Number(auto_buy_size) || 500)},
+    autonomous_mode    = ${!!autonomous_mode},
+    auto_scan_universe = ${!!auto_scan_universe},
+    max_positions      = ${Math.max(1, Math.min(50, Math.floor(Number(max_positions) || 15)))},
+    max_pos_pct        = ${Math.max(0.01, Math.min(0.30, Number(max_pos_pct) || 0.08))},
+    cash_reserve_pct   = ${Math.max(0, Math.min(0.50, Number(cash_reserve_pct) || 0.15))}
     WHERE id=${s.uid}`;
   return NextResponse.json({ ok: true });
 }

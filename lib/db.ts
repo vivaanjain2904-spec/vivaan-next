@@ -46,6 +46,12 @@ export async function initDb() {
   try { await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS auto_buy_size DOUBLE PRECISION NOT NULL DEFAULT 500`; } catch {}
   try { await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS email TEXT`; } catch {}
   try { await sql`ALTER TABLE positions ADD COLUMN IF NOT EXISTS review_at TIMESTAMPTZ`; } catch {}
+  // Autonomous trader settings
+  try { await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS autonomous_mode BOOLEAN NOT NULL DEFAULT FALSE`; } catch {}
+  try { await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS auto_scan_universe BOOLEAN NOT NULL DEFAULT FALSE`; } catch {}
+  try { await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS max_positions INTEGER NOT NULL DEFAULT 15`; } catch {}
+  try { await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS max_pos_pct DOUBLE PRECISION NOT NULL DEFAULT 0.08`; } catch {}
+  try { await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS cash_reserve_pct DOUBLE PRECISION NOT NULL DEFAULT 0.15`; } catch {}
   await sql`CREATE TABLE IF NOT EXISTS positions (
     user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
     ticker  TEXT NOT NULL,

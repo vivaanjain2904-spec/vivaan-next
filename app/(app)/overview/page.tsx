@@ -55,6 +55,8 @@ export default function OverviewPage() {
   const [alertRes, setAlertRes] = useState<{ msg: string; breaches?: any[] } | null>(null);
   const [seedBusy, setSeedBusy] = useState(false);
   const [seedMsg, setSeedMsg] = useState("");
+  const [autoBusy, setAutoBusy] = useState(false);
+  const [autoRes, setAutoRes] = useState<any>(null);
 
   async function loadPortfolio() {
     const j = await fetch("/api/portfolio").then(r => r.json());
@@ -76,6 +78,14 @@ export default function OverviewPage() {
     const j = await fetch("/api/run-alerts-self", { method: "POST" }).then(r => r.json()).catch(() => null);
     setAlertRes(j ?? { msg: "Request failed — check your connection." });
     setAlertBusy(false);
+  }
+
+  async function runAutoCycle() {
+    setAutoBusy(true); setAutoRes(null);
+    const j = await fetch("/api/auto-trade/run", { method: "POST" }).then(r => r.json()).catch(() => null);
+    setAutoRes(j ?? { msg: "Request failed." });
+    setAutoBusy(false);
+    await loadPortfolio();
   }
 
   async function seedDemo() {
@@ -173,8 +183,42 @@ export default function OverviewPage() {
         </svg>
         Settings
       </a>
+      <button onClick={runAutoCycle} disabled={autoBusy}
+              className="btn-mint text-[12px] disabled:opacity-50 inline-flex items-center gap-2">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75"
+             strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
+          <rect x="4" y="4" width="16" height="16" rx="2" />
+          <rect x="9" y="9" width="6" height="6" />
+        </svg>
+        {autoBusy ? "Scanning universe…" : "Run Auto-Trade Cycle"}
+      </button>
     </div>
   );
+
+  /* ── Autonomous cycle result panel ── */
+  const AutoBanner = autoRes ? (
+    <div className={[
+      "panel mb-6 text-sm border-l-2",
+      autoRes.bought > 0 ? "border-l-mint" :
+      autoRes.skipped ? "border-l-amber" : "border-l-border2",
+    ].join(" ")}>
+      <div className="text-ink font-semibold mb-1">
+        {autoRes.bought > 0 ? `🤖 Autonomous trader bought ${autoRes.bought} new position(s)` :
+         autoRes.skipped ? `⏸ Autonomous trader paused: ${autoRes.skipped.replace(/_/g, " ")}` :
+         "🤖 Autonomous cycle complete"}
+      </div>
+      <div className="text-xs text-muted">{autoRes.msg}</div>
+      {autoRes.orders?.length > 0 && (
+        <div className="mt-2 font-mono text-[11px] text-mint space-y-0.5">
+          {autoRes.orders.filter((o: any) => o.ok).map((o: any) => (
+            <div key={o.ticker}>
+              ✓ {o.qty} × {o.ticker} @ ${o.price?.toFixed(2)} · drop-prob {(o.dropProb * 100).toFixed(0)}% · {o.mode}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  ) : null;
 
   /* ── Feature cards (shows for all users) ── */
   const FeatureCards = (
@@ -203,6 +247,7 @@ export default function OverviewPage() {
           <div className="panel border-l-2 border-l-mint text-sm text-mint">{seedMsg}</div>
         )}
         {AlertBanner}
+        {AutoBanner}
 
         {/* Welcome hero */}
         <div className="panel dot-grid text-center py-12">

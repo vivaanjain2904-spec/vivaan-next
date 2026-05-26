@@ -65,7 +65,9 @@ export async function requireAdmin(): Promise<Session> {
 export async function getUserSettings(uid: number) {
   const r = await sql`SELECT id, name, cash, ml_alerts, ml_threshold,
     ntfy_topic, discord_webhook, email, alpaca_key, alpaca_secret, auto_trade,
-    smart_stops, auto_buy_size, is_admin
+    smart_stops, auto_buy_size,
+    autonomous_mode, auto_scan_universe, max_positions, max_pos_pct, cash_reserve_pct,
+    is_admin
     FROM users WHERE id=${uid}`;
   return r.rows[0] ?? null;
 }
