@@ -62,28 +62,72 @@ export default function ScreenerPage() {
     { k: "ml",      label: "ML Signals",   Icon: IconBrain   },
   ] as const;
 
-  // Lazy-fetch Top Picks when its tab opens (cached server-side for 10 min).
-  // 35s hard client timeout so a slow Yahoo Finance call never leaves the UI
-  // spinning indefinitely — surfaces an error instead.
+  // Top Picks is derived ENTIRELY from the data already loaded by /api/screener.
+  // No extra fetches → no Yahoo rate-limit issues → never spins.
+  // Heuristic uses quote data only (no charts):
+  //   - distance from 52-week high (lower = more upside)
+  //   - day % (mild dip preferred, not a crash)
+  //   - position in 52-week range (closer to low = more room to run)
+  // Plus: if ml_signals from the DB rank a stock low (bullish), it gets a boost.
   const [picksError, setPicksError] = useState<string | null>(null);
   useEffect(() => {
-    if (tab !== "picks" || picks.length || picksLoading) return;
-    setPicksLoading(true);
+    if (tab !== "picks" || !data) return;
     setPicksError(null);
-    const ctrl = new AbortController();
-    const timeoutId = setTimeout(() => ctrl.abort(), 35_000);
-    fetch("/api/picks?limit=20", { signal: ctrl.signal })
-      .then(r => r.json())
-      .then(j => {
-        setPicks(j.picks ?? []);
-        setPicksTotal({ scanned: j.total_scanned ?? 0, candidates: j.total_candidates ?? 0 });
+
+    // Build a lookup of ml drop_prob by ticker
+    const mlMap: Record<string, number> = {};
+    for (const m of data.ml) mlMap[m.ticker] = m.drop_probability;
+
+    // Score every active stock with a simple, instant heuristic
+    const scored: Pick[] = data.active
+      .filter(q => q.price >= 5 && q.pct != null)
+      // Filter to a sweet spot: slightly down or modestly up (avoid blow-offs and crashes)
+      .filter(q => q.pct >= -6 && q.pct <= 3)
+      .map(q => {
+        // Position 0=at-52w-low, 1=at-52w-high. Lower = more upside theoretically.
+        const hi = (q as any).hi52 ?? q.price;
+        const lo = (q as any).lo52 ?? q.price;
+        const rangePos = hi > lo ? (q.price - lo) / (hi - lo) : 0.5;
+
+        // Drop-probability: prefer ML score if available, else heuristic
+        let dropProb: number;
+        if (mlMap[q.ticker] != null) {
+          dropProb = mlMap[q.ticker];
+        } else {
+          // Simple heuristic: low range_pos + mild down day = bullish
+          // Score 0..1 where lower = more bullish
+          let score = 0.5;
+          score -= (1 - rangePos) * 0.20;            // closer to 52w low → -0.20
+          if (q.pct < 0 && q.pct > -3) score -= 0.10; // mild dip → -0.10
+          else if (q.pct < -3)         score += 0.10; // big drop → +0.10 (risky)
+          if (q.pct > 1)               score += 0.05; // already running → less upside
+          dropProb = Math.max(0.05, Math.min(0.95, score));
+        }
+
+        const price = q.price;
+        // Fallback stops/targets: 5% / 10% (no chart fetch needed)
+        const sl = 0.05, tp = 0.10;
+        return {
+          ticker: q.ticker,
+          name: q.name,
+          price,
+          day_pct: q.pct,
+          drop_prob: dropProb,
+          buy_strength: Math.round((1 - dropProb) * 100),
+          rsi: 50,
+          momentum_1m: 0,
+          smart_stops: { stop_loss: sl, take_profit: tp },
+          suggested_stop:   Number((price * (1 - sl)).toFixed(2)),
+          suggested_target: Number((price * (1 + tp)).toFixed(2)),
+        };
       })
-      .catch(e => setPicksError(e?.name === "AbortError"
-        ? "Scan timed out — Yahoo Finance may be rate-limiting. Try again in a minute."
-        : String(e?.message ?? e)))
-      .finally(() => { clearTimeout(timeoutId); setPicksLoading(false); });
-    return () => { clearTimeout(timeoutId); ctrl.abort(); };
-  }, [tab, picks.length, picksLoading]);
+      .sort((a, b) => a.drop_prob - b.drop_prob)
+      .slice(0, 20);
+
+    setPicks(scored);
+    setPicksTotal({ scanned: data.active.length, candidates: scored.length });
+    setPicksLoading(false);
+  }, [tab, data]);
 
   // When the ML tab is opened, compute live signals for the top 30 active stocks
   // if there are no Python-uploaded signals.
