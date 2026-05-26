@@ -16,9 +16,16 @@ function IconLosers()  { return (<svg {...ICON_PROPS}><polyline points="22 17 13
 function IconFlame()   { return (<svg {...ICON_PROPS}><path d="M8.5 14.5A2.5 2.5 0 0011 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 11-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 002.5 2.5z"/></svg>); }
 function IconGrid()    { return (<svg {...ICON_PROPS}><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>); }
 function IconBrain()   { return (<svg {...ICON_PROPS}><path d="M9 3a3 3 0 00-3 3 3 3 0 00-3 3v2a3 3 0 003 3v2a3 3 0 003 3 3 3 0 003-3M15 3a3 3 0 013 3 3 3 0 013 3v2a3 3 0 01-3 3v2a3 3 0 01-3 3 3 3 0 01-3-3"/></svg>); }
+function IconStar()    { return (<svg {...ICON_PROPS}><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>); }
 
 type Q = { ticker: string; price: number; pct: number; name: string; vol?: number };
 type ML = { ticker: string; drop_probability: number; price?: number; rsi?: number; return_1m?: number };
+type Pick = {
+  ticker: string; name: string; price: number; day_pct: number;
+  drop_prob: number; buy_strength: number; rsi: number; momentum_1m: number;
+  smart_stops: { stop_loss: number; take_profit: number } | null;
+  suggested_stop: number | null; suggested_target: number | null;
+};
 
 export default function ScreenerPage() {
   const router = useRouter();
@@ -26,7 +33,10 @@ export default function ScreenerPage() {
     gainers: Q[]; losers: Q[]; active: Q[]; all: Q[]; ml: ML[];
     scanned: number; universe: number; ts: string;
   } | null>(null);
-  const [tab, setTab] = useState<"gainers" | "losers" | "active" | "all" | "ml">("gainers");
+  const [tab, setTab] = useState<"picks" | "gainers" | "losers" | "active" | "all" | "ml">("picks");
+  const [picks, setPicks] = useState<Pick[]>([]);
+  const [picksLoading, setPicksLoading] = useState(false);
+  const [picksTotal, setPicksTotal] = useState({ scanned: 0, candidates: 0 });
   const [search, setSearch] = useState("");
   const [computedSig, setComputedSig] = useState<Record<string, any> | null>(null);
   const [smartStops, setSmartStops]   = useState<Record<string, { stop_loss: number; take_profit: number }>>({});
@@ -44,12 +54,26 @@ export default function ScreenerPage() {
   }, []);
 
   const tabs = [
+    { k: "picks",   label: "Top Picks",    Icon: IconStar    },
     { k: "gainers", label: "Top Gainers",  Icon: IconGainers },
     { k: "losers",  label: "Top Losers",   Icon: IconLosers  },
     { k: "active",  label: "Most Active",  Icon: IconFlame   },
     { k: "all",     label: "All Stocks",   Icon: IconGrid    },
     { k: "ml",      label: "ML Signals",   Icon: IconBrain   },
   ] as const;
+
+  // Lazy-fetch Top Picks when its tab opens (cached server-side for 10 min)
+  useEffect(() => {
+    if (tab !== "picks" || picks.length || picksLoading) return;
+    setPicksLoading(true);
+    fetch("/api/picks?limit=20")
+      .then(r => r.json())
+      .then(j => {
+        setPicks(j.picks ?? []);
+        setPicksTotal({ scanned: j.total_scanned ?? 0, candidates: j.total_candidates ?? 0 });
+      })
+      .finally(() => setPicksLoading(false));
+  }, [tab, picks.length, picksLoading]);
 
   // When the ML tab is opened, compute live signals for the top 30 active stocks
   // if there are no Python-uploaded signals.
@@ -161,6 +185,106 @@ export default function ScreenerPage() {
         </div>
       )}
 
+      {/* ── Top Picks tab ── */}
+      {tab === "picks" && (
+        <>
+          <div className="text-[12px] text-muted mb-3 leading-relaxed">
+            Highest-conviction <span className="text-mint font-semibold">BUY</span> candidates from
+            the universe, ranked by the multi-factor signal (RSI · MACD · Bollinger · Volume · MA · momentum).
+            Suggested entry, stop and target are ATR-based.
+            {picksTotal.candidates > 0 && (
+              <span className="ml-2 text-muted">
+                · {picksTotal.candidates} of {picksTotal.scanned} scanned passed the bar.
+              </span>
+            )}
+          </div>
+          {picksLoading ? (
+            <div className="panel text-muted text-sm text-center py-10">Scanning the universe…</div>
+          ) : picks.length === 0 ? (
+            <div className="panel text-muted text-sm text-center py-10">
+              No high-conviction buys right now. Check back in 10 min.
+            </div>
+          ) : (
+            <div className="panel p-0 overflow-x-auto mb-6">
+              <table className="w-full text-sm">
+                <thead className="bg-black/30">
+                  <tr className="text-[10px] uppercase tracking-[.14em] text-muted font-bold">
+                    <th className="text-left  px-5 py-3">#</th>
+                    <th className="text-left  px-3 py-3">Symbol</th>
+                    <th className="text-right px-3 py-3">Price</th>
+                    <th className="text-right px-3 py-3">Day</th>
+                    <th className="text-right px-3 py-3">Buy Strength</th>
+                    <th className="text-right px-3 py-3">RSI</th>
+                    <th className="text-right px-3 py-3">Entry → Target</th>
+                    <th className="text-right px-3 py-3">Stop</th>
+                    <th className="text-right px-5 py-3">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="font-mono text-sm">
+                  {picks.map((p, i) => (
+                    <tr key={p.ticker} className="border-b border-border1/40 last:border-b-0 hover:bg-card2/50 transition-colors animate-fade-up">
+                      <td className="px-5 py-3 text-muted text-[11px]">{i + 1}</td>
+                      <td className="px-3 py-3 font-sans">
+                        <div className="text-ink font-semibold">{p.ticker}</div>
+                        {p.name && <div className="text-muted text-[11px] truncate max-w-[160px]">{p.name}</div>}
+                      </td>
+                      <td className="px-3 py-3 text-right text-ink">{fp(p.price)}</td>
+                      <td className={`px-3 py-3 text-right ${clr(p.day_pct)}`}>{fpp(p.day_pct)}</td>
+                      <td className="px-3 py-3 text-right">
+                        <span className={[
+                          "inline-block px-2 py-0.5 rounded-md text-[11px] font-bold",
+                          p.buy_strength >= 85 ? "bg-mint/15 text-mint" :
+                          p.buy_strength >= 75 ? "bg-mint/10 text-mint" :
+                                                  "bg-card2 text-ink2 border border-border1",
+                        ].join(" ")}>
+                          {p.buy_strength}%
+                        </span>
+                      </td>
+                      <td className="px-3 py-3 text-right text-ink2">{p.rsi}</td>
+                      <td className="px-3 py-3 text-right">
+                        <div className="text-ink">{fp(p.price)} → <span className="text-mint">{p.suggested_target != null ? fp(p.suggested_target) : "—"}</span></div>
+                        <div className="text-[10px] text-muted">
+                          {p.smart_stops ? `+${(p.smart_stops.take_profit * 100).toFixed(1)}%` : "—"}
+                        </div>
+                      </td>
+                      <td className="px-3 py-3 text-right text-red/80">
+                        {p.suggested_stop != null ? fp(p.suggested_stop) : "—"}
+                        <div className="text-[10px] text-muted">
+                          {p.smart_stops ? `−${(p.smart_stops.stop_loss * 100).toFixed(1)}%` : ""}
+                        </div>
+                      </td>
+                      <td className="px-5 py-3 text-right">
+                        <div className="flex items-center gap-1.5 justify-end">
+                          <button
+                            onClick={() => {
+                              sessionStorage.setItem("trade_ticker", p.ticker);
+                              router.push("/trade");
+                            }}
+                            className="text-[11px] font-semibold text-mint hover:text-mintd transition-colors px-2.5 py-1 rounded-md border border-mint/30 hover:bg-mint/10">
+                            Trade
+                          </button>
+                          <button
+                            onClick={async () => {
+                              await fetch("/api/watchlist", {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({ ticker: p.ticker, ml_alert: true }),
+                              });
+                            }}
+                            className="text-[11px] font-semibold text-amber hover:text-amber/80 transition-colors px-2.5 py-1 rounded-md border border-amber/20 hover:bg-amber/10">
+                            Watch
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
+      )}
+
       {data ? (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
           <Stat l="Best Performer" v={data.gainers[0]?.ticker ?? "—"}
@@ -179,6 +303,7 @@ export default function ScreenerPage() {
         </div>
       )}
 
+      {tab !== "picks" && (
       <div className="panel p-0 overflow-x-auto animate-fade-up">
         {!data ? (
           <TableSkeleton rows={10} />
@@ -302,6 +427,7 @@ export default function ScreenerPage() {
           </table>
         )}
       </div>
+      )}
     </>
   );
 }
