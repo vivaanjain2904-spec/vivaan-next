@@ -62,17 +62,27 @@ export default function ScreenerPage() {
     { k: "ml",      label: "ML Signals",   Icon: IconBrain   },
   ] as const;
 
-  // Lazy-fetch Top Picks when its tab opens (cached server-side for 10 min)
+  // Lazy-fetch Top Picks when its tab opens (cached server-side for 10 min).
+  // 35s hard client timeout so a slow Yahoo Finance call never leaves the UI
+  // spinning indefinitely — surfaces an error instead.
+  const [picksError, setPicksError] = useState<string | null>(null);
   useEffect(() => {
     if (tab !== "picks" || picks.length || picksLoading) return;
     setPicksLoading(true);
-    fetch("/api/picks?limit=20")
+    setPicksError(null);
+    const ctrl = new AbortController();
+    const timeoutId = setTimeout(() => ctrl.abort(), 35_000);
+    fetch("/api/picks?limit=20", { signal: ctrl.signal })
       .then(r => r.json())
       .then(j => {
         setPicks(j.picks ?? []);
         setPicksTotal({ scanned: j.total_scanned ?? 0, candidates: j.total_candidates ?? 0 });
       })
-      .finally(() => setPicksLoading(false));
+      .catch(e => setPicksError(e?.name === "AbortError"
+        ? "Scan timed out — Yahoo Finance may be rate-limiting. Try again in a minute."
+        : String(e?.message ?? e)))
+      .finally(() => { clearTimeout(timeoutId); setPicksLoading(false); });
+    return () => { clearTimeout(timeoutId); ctrl.abort(); };
   }, [tab, picks.length, picksLoading]);
 
   // When the ML tab is opened, compute live signals for the top 30 active stocks
@@ -198,11 +208,27 @@ export default function ScreenerPage() {
               </span>
             )}
           </div>
-          {picksLoading ? (
-            <div className="panel text-muted text-sm text-center py-10">Scanning the universe…</div>
+          {picksError ? (
+            <div className="panel text-red text-sm text-center py-10">
+              {picksError}
+              <button
+                onClick={() => { setPicks([]); setPicksError(null); }}
+                className="ml-3 text-mint underline hover:text-mintd">
+                Retry
+              </button>
+            </div>
+          ) : picksLoading ? (
+            <div className="panel text-muted text-sm text-center py-10">
+              Scanning {50}+ liquid large-caps…
+            </div>
           ) : picks.length === 0 ? (
             <div className="panel text-muted text-sm text-center py-10">
               No high-conviction buys right now. Check back in 10 min.
+              <button
+                onClick={() => { setPicks([]); setPicksError(null); }}
+                className="ml-3 text-mint underline hover:text-mintd">
+                Refresh
+              </button>
             </div>
           ) : (
             <div className="panel p-0 overflow-x-auto mb-6">
