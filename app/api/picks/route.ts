@@ -1,71 +1,107 @@
 import { NextResponse } from "next/server";
+import { sql, initDb } from "@/lib/db";
 import { getQuotes, getChart } from "@/lib/yfinance";
 import { computeSignal, computeSmartStops } from "@/lib/signal";
 
 export const maxDuration = 30;
-export const revalidate = 600; // cache for 10 minutes
+export const revalidate = 600;
 
 /**
  * GET /api/picks?limit=20
- * Returns the top BUY candidates ranked by signal strength.
+ * Top BUY candidates ranked by signal strength.
  *
- * Performance notes:
- * - The old version fetched quotes for all 546 universe stocks + charts for 80,
- *   which exceeded Vercel's 60s budget under any Yahoo Finance rate-limit hiccup.
- * - This version uses a hand-curated CANDIDATE_POOL of ~50 large-cap, liquid
- *   names (S&P 500 majors + popular tech). Scans those, computes the full
- *   multi-factor signal, returns top picks. Runs in 8-15s reliably.
- * - 10-minute server-side cache via revalidate so repeated views are instant.
+ * Performance approach (after multiple iterations):
+ *  1. First try: read precomputed signals from ml_signals table — instant
+ *  2. Fallback: live scan of a tiny 20-stock pool with strict per-fetch
+ *     timeouts using Promise.allSettled (partial results OK)
+ *  3. Cache result in the DB so next call is instant
  */
 const BUY_THRESHOLD = 0.30;
 
-/* Curated pool of ~50 highly-liquid large/mega-cap stocks across sectors.
-   Chosen for: high daily volume, options availability, signal quality
-   (works well with technical indicators). Skips low-float / penny names. */
-const CANDIDATE_POOL = [
-  // Mega-cap tech
-  "AAPL","MSFT","NVDA","GOOGL","AMZN","META","TSLA","AVGO","ORCL","ADBE","CRM","NFLX","AMD","INTC","QCOM",
-  // Semis & infra
-  "ASML","TSM","MU","AMAT","LRCX","ARM",
-  // Finance
-  "JPM","BAC","WFC","GS","MS","BLK","V","MA","PYPL","SCHW","C","COF","AXP",
-  // Healthcare
-  "JNJ","UNH","LLY","ABBV","MRK","PFE",
-  // Consumer
-  "WMT","COST","HD","NKE","SBUX","MCD","DIS","CMCSA",
-  // Energy/industrial
-  "XOM","CVX","CAT","BA","GE","UPS",
-  // Growth/tech
-  "SHOP","CRWD","SNOW","PLTR","COIN","UBER","ABNB","NOW","INTU","SPOT",
+/* Tight 20-stock pool of the most-watched names. Trade-off: less breadth
+   for much more reliable response time. */
+const POOL = [
+  "AAPL","MSFT","NVDA","GOOGL","AMZN","META","TSLA","AVGO",
+  "AMD","NFLX","CRM","ORCL","JPM","V","MA","JNJ",
+  "WMT","HD","XOM","COST",
 ];
+
+const FETCH_TIMEOUT_MS = 4500;     // per chart fetch (Yahoo Finance)
+
+/** Wraps a promise with a hard timeout. Resolves to null on timeout/fail. */
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T | null> {
+  return new Promise(resolve => {
+    const t = setTimeout(() => resolve(null), ms);
+    p.then(v => { clearTimeout(t); resolve(v); })
+     .catch(() => { clearTimeout(t); resolve(null); });
+  });
+}
 
 export async function GET(req: Request) {
   const url = new URL(req.url);
   const limit = Math.min(50, Math.max(1, Number(url.searchParams.get("limit") ?? 20)));
 
-  // Stage 1: pull quotes for the pool (~50 tickers in one batch — fast)
-  const quoteMap = await getQuotes(CANDIDATE_POOL);
-  const liquid = CANDIDATE_POOL
-    .map(t => ({ ticker: t, q: quoteMap[t] }))
+  await initDb().catch(() => {});
+
+  // ── Step 1: read precomputed signals from ml_signals table ──
+  try {
+    const r = await sql`SELECT ticker, drop_probability, price, rsi, return_1m, updated_at
+      FROM ml_signals
+      WHERE ticker = ANY(${POOL as any})
+        AND drop_probability < ${BUY_THRESHOLD}
+      ORDER BY drop_probability ASC
+      LIMIT ${limit}`;
+    if (r.rows.length > 0) {
+      // Fetch fresh quote + smart_stops only for the ranked rows (much smaller call)
+      const tickers = r.rows.map((x: any) => x.ticker);
+      const quotes = await getQuotes(tickers);
+      const enriched = await Promise.all(r.rows.map(async (row: any) => {
+        const q = quotes[row.ticker];
+        const price = q?.price ?? Number(row.price ?? 0);
+        const candles = await withTimeout(getChart(row.ticker, "1mo"), FETCH_TIMEOUT_MS).catch(() => null);
+        const smart = candles ? computeSmartStops(candles) : null;
+        return {
+          ticker: row.ticker,
+          name: q?.name ?? "",
+          price,
+          day_pct: q?.pct ?? 0,
+          drop_prob: Number(row.drop_probability),
+          buy_strength: Math.round((1 - Number(row.drop_probability)) * 100),
+          rsi: Math.round(Number(row.rsi ?? 50)),
+          momentum_1m: Number(row.return_1m ?? 0) * 100,
+          smart_stops: smart,
+          suggested_stop:   smart ? Number((price * (1 - smart.stop_loss)).toFixed(2))   : null,
+          suggested_target: smart ? Number((price * (1 + smart.take_profit)).toFixed(2)) : null,
+        };
+      }));
+      return NextResponse.json({
+        picks: enriched,
+        total_scanned: POOL.length,
+        total_candidates: r.rows.length,
+        threshold: BUY_THRESHOLD,
+        source: "cache",
+        ts: new Date().toISOString(),
+      });
+    }
+  } catch {}
+
+  // ── Step 2: fallback live scan with strict per-fetch timeouts ──
+  const quotes = await getQuotes(POOL);
+  const liquid = POOL
+    .map(t => ({ ticker: t, q: quotes[t] }))
     .filter(c => c.q && c.q.price >= 5);
 
-  // Stage 2: compute signals for all in parallel chunks of 20
-  const scored: any[] = [];
-  const CHUNK = 20;
-  for (let i = 0; i < liquid.length; i += CHUNK) {
-    const chunk = liquid.slice(i, i + CHUNK);
-    const enriched = await Promise.all(chunk.map(async c => {
-      const candles = await getChart(c.ticker, "3mo").catch(() => []);
-      if (!candles.length) return null;
+  // Run ALL chart fetches in parallel with Promise.allSettled — slow ones don't block
+  const enriched = await Promise.allSettled(
+    liquid.map(async c => {
+      const candles = await withTimeout(getChart(c.ticker, "3mo"), FETCH_TIMEOUT_MS);
+      if (!candles) return null;
       const sig = computeSignal(candles);
       if (!sig || sig.dropProb >= BUY_THRESHOLD) return null;
       const smart = computeSmartStops(candles);
       const price = c.q.price;
       return {
-        ticker: c.ticker,
-        name: c.q.name,
-        price,
-        day_pct: c.q.pct,
+        ticker: c.ticker, name: c.q.name, price, day_pct: c.q.pct,
         drop_prob: sig.dropProb,
         buy_strength: Math.round((1 - sig.dropProb) * 100),
         rsi: Math.round(sig.rsi),
@@ -73,20 +109,41 @@ export async function GET(req: Request) {
         smart_stops: smart,
         suggested_stop:   smart ? Number((price * (1 - smart.stop_loss)).toFixed(2))   : null,
         suggested_target: smart ? Number((price * (1 + smart.take_profit)).toFixed(2)) : null,
+        _signal: sig,
       };
-    }));
-    for (const e of enriched) if (e) scored.push(e);
-  }
+    })
+  );
+
+  const scored = enriched
+    .filter(r => r.status === "fulfilled" && r.value)
+    .map(r => (r as any).value);
 
   scored.sort((a, b) => a.drop_prob - b.drop_prob);
-  const picks = scored.slice(0, limit);
+
+  // ── Step 3: write back to ml_signals table for next time (best-effort) ──
+  for (const s of scored) {
+    try {
+      await sql`INSERT INTO ml_signals (ticker, drop_probability, price, rsi, return_1m, updated_at)
+        VALUES (${s.ticker}, ${s.drop_prob}, ${s.price}, ${s._signal?.rsi ?? null},
+                ${(s._signal?.momentum1m ?? 0) / 100}, NOW())
+        ON CONFLICT (ticker) DO UPDATE
+          SET drop_probability = EXCLUDED.drop_probability,
+              price = EXCLUDED.price,
+              rsi = EXCLUDED.rsi,
+              return_1m = EXCLUDED.return_1m,
+              updated_at = NOW()`;
+    } catch {}
+  }
+
+  // strip internal field
+  const out = scored.map(({ _signal, ...rest }) => rest).slice(0, limit);
 
   return NextResponse.json({
-    picks,
+    picks: out,
     total_scanned: liquid.length,
     total_candidates: scored.length,
     threshold: BUY_THRESHOLD,
-    pool_size: CANDIDATE_POOL.length,
+    source: "live",
     ts: new Date().toISOString(),
   });
 }
