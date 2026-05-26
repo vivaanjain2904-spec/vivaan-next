@@ -4,7 +4,6 @@ import { fp, fpp, clr } from "@/lib/format";
 import { Kpi } from "@/components/Kpi";
 import Sparkline from "@/components/Sparkline";
 import Allocation from "@/components/Allocation";
-import TickerLogo from "@/components/TickerLogo";
 
 type PortfolioRes = {
   user: { name: string; cash: number; ml_threshold: number };
@@ -147,19 +146,33 @@ export default function OverviewPage() {
   /* ── Quick Tools bar (shows for all users) ── */
   const QuickTools = (
     <div className="flex flex-wrap gap-2 mb-7">
-      <button
-        onClick={runAlerts}
-        disabled={alertBusy}
-        className="btn-ghost text-[12px] disabled:opacity-50">
-        {alertBusy ? "Checking…" : "🤖 Run Alert Check"}
+      <button onClick={runAlerts} disabled={alertBusy}
+              className="btn-ghost text-[12px] disabled:opacity-50 inline-flex items-center gap-2">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75"
+             strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
+          <path d="M21 12a9 9 0 11-9-9c2.5 0 4.7 1 6.4 2.6L21 3" />
+          <polyline points="21 3 21 9 15 9" />
+        </svg>
+        {alertBusy ? "Checking…" : "Run Alert Check"}
       </button>
-      <button
-        onClick={seedDemo}
-        disabled={seedBusy}
-        className="btn-ghost text-[12px] disabled:opacity-50">
-        {seedBusy ? "Seeding…" : "🌱 Seed Demo Portfolio"}
+      <button onClick={seedDemo} disabled={seedBusy}
+              className="btn-ghost text-[12px] disabled:opacity-50 inline-flex items-center gap-2">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75"
+             strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
+          <path d="M12 22V12" />
+          <path d="M5 12c0-4 3-7 7-7s7 3 7 7" />
+          <path d="M9 16l3 3 3-3" />
+        </svg>
+        {seedBusy ? "Seeding…" : "Seed Demo Portfolio"}
       </button>
-      <a href="/settings" className="btn-ghost text-[12px]">⚙️ Settings</a>
+      <a href="/settings" className="btn-ghost text-[12px] inline-flex items-center gap-2">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75"
+             strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
+          <circle cx="12" cy="12" r="3" />
+          <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09a1.65 1.65 0 00-1-1.51 1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09a1.65 1.65 0 001.51-1 1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z" />
+        </svg>
+        Settings
+      </a>
     </div>
   );
 
@@ -328,21 +341,16 @@ export default function OverviewPage() {
               return (
                 <tr key={p.ticker} className="border-b border-border1/50 last:border-b-0 hover:bg-card2/50 transition-colors">
                   <td className="px-5 py-3 font-sans">
-                    <div className="flex items-center gap-2.5">
-                      <TickerLogo ticker={p.ticker} size="sm" />
-                      <div className="min-w-0">
-                        <div className="text-ink font-semibold flex items-center gap-2">
-                          {p.ticker}
-                          {p.review_at && new Date(p.review_at).getTime() < Date.now() && (
-                            <a href="/trade" title="Review window expired — re-tune stops"
-                               className="pill text-[10px] bg-amber/10 text-amber border border-amber/20 hover:bg-amber/20">
-                              🔄 Review
-                            </a>
-                          )}
-                        </div>
-                        <div className="text-muted text-[11px] truncate max-w-[140px]">{q.name}</div>
-                      </div>
+                    <div className="text-ink font-semibold flex items-center gap-2">
+                      {p.ticker}
+                      {p.review_at && new Date(p.review_at).getTime() < Date.now() && (
+                        <a href="/trade" title="Review window expired — re-tune stops"
+                           className="pill text-[10px] bg-amber/10 text-amber border border-amber/20 hover:bg-amber/20">
+                          🔄 Review
+                        </a>
+                      )}
                     </div>
+                    <div className="text-muted text-[11px] truncate max-w-[140px]">{q.name}</div>
                   </td>
                   <td className="px-2 py-3"><Sparkline ticker={p.ticker} /></td>
                   <td className="px-3 py-3 text-right text-ink">{fp(q.price)}</td>

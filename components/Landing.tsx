@@ -1,6 +1,5 @@
 import Link from "next/link";
 import Logo from "@/components/Logo";
-import TickerLogo from "@/components/TickerLogo";
 
 /* ────────────────────────────────────────────────────────────
    PUBLIC LANDING PAGE — shared by:
@@ -324,13 +323,8 @@ function MockRow({ tk, name, px, pnl, pnlPos, ml, mlTone }: {
   return (
     <tr className="border-b border-border1/50 last:border-b-0">
       <td className="px-3 py-2 font-sans">
-        <div className="flex items-center gap-2">
-          <TickerLogo ticker={tk} size="xs" />
-          <div className="min-w-0">
-            <div className="text-ink font-semibold text-[12px]">{tk}</div>
-            <div className="text-muted text-[10px] truncate max-w-[120px]">{name}</div>
-          </div>
-        </div>
+        <div className="text-ink font-semibold text-[12px]">{tk}</div>
+        <div className="text-muted text-[10px] truncate max-w-[120px]">{name}</div>
       </td>
       <td className="px-2 py-2 text-right text-ink">{px}</td>
       <td className={`px-2 py-2 text-right font-semibold ${pnlPos ? "text-mint" : "text-red"}`}>{pnl}</td>

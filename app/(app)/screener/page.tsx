@@ -2,9 +2,20 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Sparkline from "@/components/Sparkline";
-import TickerLogo from "@/components/TickerLogo";
 import { TableSkeleton } from "@/components/Skeleton";
 import { fp, fpp, clr, fmtVol } from "@/lib/format";
+
+/* Lucide-style stroke icons — used in the filter pills */
+const ICON_PROPS = {
+  viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 1.75,
+  strokeLinecap: "round" as const, strokeLinejoin: "round" as const,
+  className: "w-3.5 h-3.5",
+};
+function IconGainers() { return (<svg {...ICON_PROPS}><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>); }
+function IconLosers()  { return (<svg {...ICON_PROPS}><polyline points="22 17 13.5 8.5 8.5 13.5 2 7"/><polyline points="16 17 22 17 22 11"/></svg>); }
+function IconFlame()   { return (<svg {...ICON_PROPS}><path d="M8.5 14.5A2.5 2.5 0 0011 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 11-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 002.5 2.5z"/></svg>); }
+function IconGrid()    { return (<svg {...ICON_PROPS}><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>); }
+function IconBrain()   { return (<svg {...ICON_PROPS}><path d="M9 3a3 3 0 00-3 3 3 3 0 00-3 3v2a3 3 0 003 3v2a3 3 0 003 3 3 3 0 003-3M15 3a3 3 0 013 3 3 3 0 013 3v2a3 3 0 01-3 3v2a3 3 0 01-3 3 3 3 0 01-3-3"/></svg>); }
 
 type Q = { ticker: string; price: number; pct: number; name: string; vol?: number };
 type ML = { ticker: string; drop_probability: number; price?: number; rsi?: number; return_1m?: number };
@@ -33,11 +44,11 @@ export default function ScreenerPage() {
   }, []);
 
   const tabs = [
-    { k: "gainers", label: "Top Gainers",  icon: "📈" },
-    { k: "losers",  label: "Top Losers",   icon: "📉" },
-    { k: "active",  label: "Most Active",  icon: "🔥" },
-    { k: "all",     label: "All Stocks",   icon: "📋" },
-    { k: "ml",      label: "ML Signals",   icon: "🤖" },
+    { k: "gainers", label: "Top Gainers",  Icon: IconGainers },
+    { k: "losers",  label: "Top Losers",   Icon: IconLosers  },
+    { k: "active",  label: "Most Active",  Icon: IconFlame   },
+    { k: "all",     label: "All Stocks",   Icon: IconGrid    },
+    { k: "ml",      label: "ML Signals",   Icon: IconBrain   },
   ] as const;
 
   // When the ML tab is opened, compute live signals for the top 30 active stocks
@@ -131,8 +142,9 @@ export default function ScreenerPage() {
         <div className="seg">
           {tabs.map(t => (
             <button key={t.k} onClick={() => setTab(t.k as any)}
-                    className={tab === t.k ? "seg-btn-active" : "seg-btn"}>
-              {t.icon} {t.label}
+                    className={`${tab === t.k ? "seg-btn-active" : "seg-btn"} inline-flex items-center gap-1.5`}>
+              <t.Icon />
+              {t.label}
             </button>
           ))}
         </div>
@@ -220,13 +232,8 @@ export default function ScreenerPage() {
                   <tr key={r.ticker} className="border-b border-border1/40 last:border-b-0 hover:bg-card2/50 transition-colors animate-fade-up">
                     <td className="px-5 py-3 text-muted text-[11px]">{i + 1}</td>
                     <td className="px-3 py-3 font-sans">
-                      <div className="flex items-center gap-2.5">
-                        <TickerLogo ticker={r.ticker} size="sm" />
-                        <div className="min-w-0">
-                          <div className="text-ink font-semibold">{r.ticker}</div>
-                          {r.name && <div className="text-muted text-[11px] truncate max-w-[140px]">{r.name}</div>}
-                        </div>
-                      </div>
+                      <div className="text-ink font-semibold">{r.ticker}</div>
+                      {r.name && <div className="text-muted text-[11px] truncate max-w-[140px]">{r.name}</div>}
                     </td>
                     <td className="px-2 py-3"><Sparkline ticker={r.ticker} /></td>
                     <td className="px-3 py-3 text-right text-ink">{fp(r.price)}</td>
