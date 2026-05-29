@@ -67,7 +67,7 @@ export async function getUserSettings(uid: number) {
     ntfy_topic, discord_webhook, email, alpaca_key, alpaca_secret, auto_trade,
     smart_stops, auto_buy_size,
     autonomous_mode, auto_scan_universe, max_positions, max_pos_pct, cash_reserve_pct,
-    is_admin
+    strategy, is_admin
     FROM users WHERE id=${uid}`;
   return r.rows[0] ?? null;
 }
