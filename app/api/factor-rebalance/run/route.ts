@@ -133,13 +133,17 @@ export async function POST(req: Request) {
 
     const auth = req.headers.get("authorization") || "";
     const cronSecret = process.env.CRON_SECRET;
+    const adminSecret = process.env.ADMIN_UPLOAD_SECRET;
 
-    // Automated path: cron secret → all autonomous users
-    if (cronSecret && auth === `Bearer ${cronSecret}`) {
+    // Automated path: cron OR admin-upload secret → all autonomous users.
+    // (Accepting ADMIN_UPLOAD_SECRET lets the local research job push the target
+    //  AND trigger the rebalance with a single secret — fully hands-free.)
+    if ((cronSecret && auth === `Bearer ${cronSecret}`) ||
+        (adminSecret && auth === `Bearer ${adminSecret}`)) {
       const users = await sql`SELECT * FROM users WHERE autonomous_mode = TRUE`;
       const results = [];
       for (const u of users.rows) results.push(await rebalanceUser(u, target));
-      return NextResponse.json({ ok: true, mode: "cron", users: results.length, results });
+      return NextResponse.json({ ok: true, mode: "automated", users: results.length, results });
     }
 
     // Manual path: logged-in user
