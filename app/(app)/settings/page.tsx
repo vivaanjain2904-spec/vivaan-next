@@ -279,10 +279,10 @@ export default function SettingsPage() {
         <div className="grid sm:grid-cols-3 gap-4 mt-5">
           <div>
             <label className="label">Max open positions: {maxPositions}</label>
-            <input type="range" min={5} max={30} value={maxPositions}
+            <input type="range" min={5} max={60} value={maxPositions}
                    onChange={e => setMaxPositions(Number(e.target.value))}
                    className="w-full accent-mint" />
-            <div className="text-muted text-[10px]">Caps total stock count.</div>
+            <div className="text-muted text-[10px]">Caps total stock count. More = more diversification.</div>
           </div>
           <div>
             <label className="label">Max % per position: {(maxPosPct * 100).toFixed(0)}%</label>
