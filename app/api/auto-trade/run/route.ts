@@ -64,6 +64,7 @@ const MAX_NEW_BUYS_PER_CYCLE = 5;          // fill positions faster (was 3)
 const ML_RANK_CANDIDATES = 25;             // how many top model-ranked names to score per cycle
 
 export async function POST() {
+  try {
   const s = await requireSession();
   await initDb().catch(() => {});
 
@@ -519,4 +520,17 @@ export async function POST() {
       boughtCount > 0 ? `Bought ${boughtCount}` : (scored.length ? `${scored.length} candidates didn't fit sizing rules` : null),
     ].filter(Boolean).join(" · ") || "No actions this cycle.",
   });
+  } catch (e: any) {
+    // requireSession throws a Response on no/expired session — surface it as a
+    // clean, readable message instead of an opaque Next.js 500 with empty body.
+    if (e instanceof Response || (e && typeof e.status === "number" && e.status === 401)) {
+      return NextResponse.json(
+        { ok: false, error: "Not signed in (session expired). Please log out and back in, then retry." },
+        { status: 401 });
+    }
+    console.error("[auto-trade] unhandled error", e);
+    return NextResponse.json(
+      { ok: false, error: `Auto-trade failed: ${e?.message ?? String(e)}` },
+      { status: 500 });
+  }
 }

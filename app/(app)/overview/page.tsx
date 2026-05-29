@@ -82,10 +82,21 @@ export default function OverviewPage() {
 
   async function runAutoCycle() {
     setAutoBusy(true); setAutoRes(null);
-    const j = await fetch("/api/auto-trade/run", { method: "POST" }).then(r => r.json()).catch(() => null);
-    setAutoRes(j ?? { msg: "Request failed." });
-    setAutoBusy(false);
-    await loadPortfolio();
+    try {
+      const r = await fetch("/api/auto-trade/run", { method: "POST" });
+      let j: any = null;
+      try { j = await r.json(); } catch { /* non-JSON (e.g. opaque 500) */ }
+      if (!r.ok) {
+        setAutoRes({ msg: j?.error || `Request failed (HTTP ${r.status}). Try logging out and back in.` });
+      } else {
+        setAutoRes(j ?? { msg: "Cycle ran but returned no data." });
+      }
+    } catch (e: any) {
+      setAutoRes({ msg: `Network error: ${e?.message ?? "could not reach server"}.` });
+    } finally {
+      setAutoBusy(false);
+      await loadPortfolio();
+    }
   }
 
   async function seedDemo() {
