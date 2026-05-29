@@ -105,4 +105,14 @@ export async function initDb() {
     return_1m DOUBLE PRECISION,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )`;
+  // Factor strategy target portfolio (momentum+lowvol+regime), uploaded by the
+  // research pipeline. The auto-rebalancer trades the user toward the latest row.
+  await sql`CREATE TABLE IF NOT EXISTS factor_targets (
+    id SERIAL PRIMARY KEY,
+    as_of DATE NOT NULL,
+    regime TEXT,
+    exposure DOUBLE PRECISION NOT NULL,
+    targets JSONB NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`;
 }
