@@ -29,7 +29,7 @@ export async function GET(req: Request) {
   const factorAccount = process.env.FACTOR_ACCOUNT_NAME || "Vivaan";
   const usersR = await sql`SELECT id, name, ntfy_topic, discord_webhook, email,
     ml_alerts, ml_threshold, alpaca_key, alpaca_secret, auto_trade, auto_buy_size
-    FROM users WHERE name <> ${factorAccount}`;
+    FROM users WHERE strategy <> 'factor' AND name <> ${factorAccount}`;
   if (!usersR.rows.length) return NextResponse.json({ ok: true, msg: "no users" });
 
   // Collect every ticker across all users

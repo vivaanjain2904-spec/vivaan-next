@@ -71,14 +71,14 @@ export async function POST() {
   const ur = await sql`SELECT id, name, cash, autonomous_mode, auto_scan_universe,
     max_positions, max_pos_pct, cash_reserve_pct, auto_buy_size, ml_threshold,
     alpaca_key, alpaca_secret, auto_trade, ntfy_topic, discord_webhook, email,
-    core_ticker, core_pct, peak_equity, circuit_breaker_pct, circuit_breaker_until
+    core_ticker, core_pct, peak_equity, circuit_breaker_pct, circuit_breaker_until, strategy
     FROM users WHERE id=${s.uid}`;
   const user = ur.rows[0];
   if (!user) return NextResponse.json({ error: "user not found" }, { status: 404 });
 
   // Protect the factor-strategy account: the old TA auto-trade must not run here
   // (it would mix strategies). This account is managed by the factor rebalance.
-  if (user.name === (process.env.FACTOR_ACCOUNT_NAME || "Vivaan")) {
+  if (user.strategy === "factor" || user.name === (process.env.FACTOR_ACCOUNT_NAME || "Vivaan")) {
     return NextResponse.json({
       ok: false,
       skipped: "factor_account",

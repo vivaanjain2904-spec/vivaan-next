@@ -144,7 +144,8 @@ export async function POST(req: Request) {
       // ONLY — so other accounts (e.g. an A/B account running the old TA button)
       // are never overwritten by the factor job.
       const factorAccount = process.env.FACTOR_ACCOUNT_NAME || "Vivaan";
-      const users = await sql`SELECT * FROM users WHERE autonomous_mode = TRUE AND name = ${factorAccount}`;
+      // Any account opted into the factor strategy (plus the legacy default account).
+      const users = await sql`SELECT * FROM users WHERE strategy = 'factor' OR name = ${factorAccount}`;
       const results = [];
       for (const u of users.rows) results.push(await rebalanceUser(u, target));
       return NextResponse.json({ ok: true, mode: "automated", account: factorAccount, users: results.length, results });

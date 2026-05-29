@@ -9,8 +9,11 @@ export async function POST(req: Request) {
     ntfy_topic, discord_webhook, email, ml_alerts, ml_threshold,
     alpaca_key, alpaca_secret, auto_trade, smart_stops, auto_buy_size,
     autonomous_mode, auto_scan_universe, max_positions, max_pos_pct, cash_reserve_pct,
+    strategy,
   } = await req.json();
+  const strat = strategy === "factor" ? "factor" : "ta";
   await sql`UPDATE users SET
+    strategy           = ${strat},
     ntfy_topic      = ${ntfy_topic ? String(ntfy_topic).trim() : null},
     discord_webhook = ${discord_webhook ? String(discord_webhook).trim() : null},
     email           = ${email ? String(email).trim().toLowerCase() : null},
@@ -23,7 +26,7 @@ export async function POST(req: Request) {
     auto_buy_size   = ${Math.max(1, Number(auto_buy_size) || 500)},
     autonomous_mode    = ${!!autonomous_mode},
     auto_scan_universe = ${!!auto_scan_universe},
-    max_positions      = ${Math.max(1, Math.min(50, Math.floor(Number(max_positions) || 15)))},
+    max_positions      = ${Math.max(1, Math.min(60, Math.floor(Number(max_positions) || 15)))},
     max_pos_pct        = ${Math.max(0.01, Math.min(0.30, Number(max_pos_pct) || 0.08))},
     cash_reserve_pct   = ${Math.max(0, Math.min(0.50, Number(cash_reserve_pct) || 0.15))}
     WHERE id=${s.uid}`;

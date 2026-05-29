@@ -22,6 +22,7 @@ export default function SettingsPage() {
   const [maxPositions, setMaxPositions] = useState(15);
   const [maxPosPct, setMaxPosPct] = useState(0.08);
   const [cashReservePct, setCashReservePct] = useState(0.15);
+  const [strategy, setStrategy] = useState("ta");
   const [pw, setPw] = useState("");
   const [pw2, setPw2] = useState("");
   const [msg, setMsg] = useState("");
@@ -50,6 +51,7 @@ export default function SettingsPage() {
     setMaxPositions(Number(j.user.max_positions) || 15);
     setMaxPosPct(Number(j.user.max_pos_pct) || 0.08);
     setCashReservePct(Number(j.user.cash_reserve_pct) || 0.15);
+    setStrategy(j.user.strategy === "factor" ? "factor" : "ta");
     const nj = await fetch("/api/notifications").then(r => r.json());
     setRecent(nj.recent ?? []);
   }
@@ -67,6 +69,7 @@ export default function SettingsPage() {
       max_positions: maxPositions,
       max_pos_pct: maxPosPct,
       cash_reserve_pct: cashReservePct,
+      strategy,
     };
     // Only send secret if user typed a new one (not the masked value)
     if (apSec && !apSec.startsWith("•")) body.alpaca_secret = apSec;
@@ -251,6 +254,25 @@ export default function SettingsPage() {
           (RSI + MA + momentum + MACD + Bollinger + volume) — <b>not a trained ML model yet</b>.
           Always backtest your settings before relying on this in real markets. Safety rails below
           prevent ruin, not losses.
+        </div>
+
+        <div className="mb-4">
+          <label className="label">Strategy</label>
+          <div className="flex gap-2 mt-1">
+            <button type="button" onClick={() => setStrategy("ta")}
+              className={`px-3 py-1.5 rounded-lg text-[12px] border ${strategy === "ta" ? "border-mint text-mint bg-mint/10" : "border-border1 text-muted"}`}>
+              Classic (auto-trade)
+            </button>
+            <button type="button" onClick={() => setStrategy("factor")}
+              className={`px-3 py-1.5 rounded-lg text-[12px] border ${strategy === "factor" ? "border-mint text-mint bg-mint/10" : "border-border1 text-muted"}`}>
+              Factor (momentum + low-vol)
+            </button>
+          </div>
+          <div className="text-muted text-[11px] mt-1">
+            Classic = the TA buy/sell auto-trader (this page's settings).
+            Factor = the validated momentum+low-vol+regime portfolio, rebalanced monthly.
+            Switching to Factor disables the classic auto-trade on this account.
+          </div>
         </div>
 
         <label className="flex items-start gap-2 mt-1 text-sm cursor-pointer">
