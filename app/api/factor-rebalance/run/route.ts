@@ -140,10 +140,14 @@ export async function POST(req: Request) {
     //  AND trigger the rebalance with a single secret — fully hands-free.)
     if ((cronSecret && auth === `Bearer ${cronSecret}`) ||
         (adminSecret && auth === `Bearer ${adminSecret}`)) {
-      const users = await sql`SELECT * FROM users WHERE autonomous_mode = TRUE`;
+      // Scope the automated factor rebalance to the designated factor account
+      // ONLY — so other accounts (e.g. an A/B account running the old TA button)
+      // are never overwritten by the factor job.
+      const factorAccount = process.env.FACTOR_ACCOUNT_NAME || "Vivaan";
+      const users = await sql`SELECT * FROM users WHERE autonomous_mode = TRUE AND name = ${factorAccount}`;
       const results = [];
       for (const u of users.rows) results.push(await rebalanceUser(u, target));
-      return NextResponse.json({ ok: true, mode: "automated", users: results.length, results });
+      return NextResponse.json({ ok: true, mode: "automated", account: factorAccount, users: results.length, results });
     }
 
     // Manual path: logged-in user
