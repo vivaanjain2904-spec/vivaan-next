@@ -24,8 +24,12 @@ export async function GET(req: Request) {
 
   await initDb().catch(() => {});
 
+  // Exclude the factor-strategy account — its positions are managed by the
+  // monthly factor rebalance, not by TA stop/target/ML auto-sells.
+  const factorAccount = process.env.FACTOR_ACCOUNT_NAME || "Vivaan";
   const usersR = await sql`SELECT id, name, ntfy_topic, discord_webhook, email,
-    ml_alerts, ml_threshold, alpaca_key, alpaca_secret, auto_trade, auto_buy_size FROM users`;
+    ml_alerts, ml_threshold, alpaca_key, alpaca_secret, auto_trade, auto_buy_size
+    FROM users WHERE name <> ${factorAccount}`;
   if (!usersR.rows.length) return NextResponse.json({ ok: true, msg: "no users" });
 
   // Collect every ticker across all users

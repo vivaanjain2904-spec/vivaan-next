@@ -51,10 +51,13 @@ export async function GET(req: Request) {
   await initDb().catch(() => {});
 
   // Only users who opted in
+  // Exclude the factor-strategy account — it's managed solely by the monthly
+  // factor rebalance, so the old TA buy logic must not touch it.
+  const factorAccount = process.env.FACTOR_ACCOUNT_NAME || "Vivaan";
   const usersR = await sql`SELECT id, name, cash, autonomous_mode, auto_scan_universe,
     max_positions, max_pos_pct, cash_reserve_pct, auto_buy_size, ml_threshold,
     alpaca_key, alpaca_secret, auto_trade, ntfy_topic, discord_webhook, email
-    FROM users WHERE autonomous_mode = TRUE`;
+    FROM users WHERE autonomous_mode = TRUE AND name <> ${factorAccount}`;
 
   if (!usersR.rows.length) {
     return NextResponse.json({ ok: true, users: 0, msg: "No users with autonomous_mode on." });
