@@ -76,6 +76,16 @@ export async function POST() {
   const user = ur.rows[0];
   if (!user) return NextResponse.json({ error: "user not found" }, { status: 404 });
 
+  // Protect the factor-strategy account: the old TA auto-trade must not run here
+  // (it would mix strategies). This account is managed by the factor rebalance.
+  if (user.name === (process.env.FACTOR_ACCOUNT_NAME || "Vivaan")) {
+    return NextResponse.json({
+      ok: false,
+      skipped: "factor_account",
+      msg: "This account runs the factor strategy (managed by the monthly factor rebalance). The old auto-trade is disabled here to prevent mixing strategies.",
+    });
+  }
+
   if (!user.autonomous_mode) {
     return NextResponse.json({
       ok: false,
