@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { sql, initDb } from "@/lib/db";
 import { requireSession } from "@/lib/auth";
-import { getQuotes, getChart, daysUntilEarnings } from "@/lib/yfinance";
+import { getQuotes, getChart, daysUntilEarnings, getNews } from "@/lib/yfinance";
 import { computeSignal, computeMarketRegime, computeSmartStops, computeTrailingStop, sizingMultiplier } from "@/lib/signal";
+import { scoreHeadlines } from "@/lib/sentiment";
 import { alertUser } from "@/lib/ntfy";
 import { alpacaBuy, alpacaSell } from "@/lib/alpaca";
 
@@ -139,16 +140,32 @@ export async function POST() {
       // Quick ML check via chart
       let mlHit = false;
       let signal: any = null;
+      let dp: number | null = null;
       try {
         const candles = await getChart(p.ticker, "3mo");
         signal = computeSignal(candles);
         // Prefer the Python model's score; fall back to TA signal.
-        const dp = dropProbFor(p.ticker, signal);
+        dp = dropProbFor(p.ticker, signal);
         if (dp != null && dp >= mlThreshold) mlHit = true;
       } catch {}
 
-      if (stopHit || tgtHit || mlHit) {
-        const reason = stopHit ? "stop-loss" : tgtHit ? "take-profit" : "ml-signal";
+      // News-sentiment RISK OVERLAY (sell-side only, never a buy signal).
+      // To bound API calls we only check news for BORDERLINE holdings — model
+      // already moderately risky (dp >= 0.50) but not yet a hard ML sell, and
+      // not already exiting on stop/target. Strongly negative headlines then
+      // escalate to an exit. Being wrong just means selling early.
+      let newsHit = false;
+      let newsScore: number | null = null;
+      if (!stopHit && !tgtHit && !mlHit && dp != null && dp >= 0.50) {
+        try {
+          const news = await getNews(p.ticker, 8);
+          const s = scoreHeadlines(news.map(n => n.title));
+          if (s.n >= 3) { newsScore = s.score; if (s.score <= -0.4) newsHit = true; }
+        } catch {}
+      }
+
+      if (stopHit || tgtHit || mlHit || newsHit) {
+        const reason = stopHit ? "stop-loss" : tgtHit ? "take-profit" : mlHit ? "ml-signal" : "negative-news";
         const qty = Number(p.qty);
         const proceeds = qty * px;
 
@@ -173,7 +190,8 @@ export async function POST() {
 
         const title = stopHit ? `🔴 Auto-sold ${p.ticker} (stop)` :
                       tgtHit ? `🟢 Auto-sold ${p.ticker} (target)` :
-                               `⚠️ Auto-sold ${p.ticker} (ML)`;
+                      mlHit  ? `⚠️ Auto-sold ${p.ticker} (ML)` :
+                               `📰 Auto-sold ${p.ticker} (negative news${newsScore != null ? ` ${newsScore.toFixed(2)}` : ""})`;
         const body = `${qty} shares @ $${px.toFixed(2)} · ${reason}` +
           (alpacaOrderId ? ` · Alpaca order ${alpacaOrderId}` : " · paper");
         await sql`INSERT INTO notifications (user_id, ticker, kind, title, body)
