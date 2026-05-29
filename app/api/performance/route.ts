@@ -97,9 +97,17 @@ export async function GET() {
   }).sort((a, b) => b.pnl - a.pnl);
 
   // ── Total return vs starting cash ──
+  // Derive the TRUE starting capital from the trade history instead of assuming
+  // a hardcoded base. With no deposits/withdrawals after funding, this identity
+  // holds exactly:
+  //     starting = current_cash + cost_basis_of_open_positions − realized_pnl
+  // (Hardcoding DEFAULT_STARTING_CASH caused the infamous "+900%" bug when an
+  //  account was actually funded with a different amount, e.g. $1,000,000.)
   const currentEquity = cash + totalValue;
-  const totalReturn   = ((currentEquity - DEFAULT_STARTING_CASH) / DEFAULT_STARTING_CASH) * 100;
-  const totalPnL      = currentEquity - DEFAULT_STARTING_CASH;
+  const derivedStart  = cash + totalCost - realizedPnL;
+  const startingCash   = derivedStart > 0 ? derivedStart : DEFAULT_STARTING_CASH;
+  const totalReturn   = ((currentEquity - startingCash) / startingCash) * 100;
+  const totalPnL      = currentEquity - startingCash;
 
   // ── SPY benchmark over same window (first trade → now) ──
   let spyReturn: number | null = null;
@@ -126,7 +134,7 @@ export async function GET() {
   // This isn't mark-to-market intraday but it's accurate at trade time.
   type CurvePoint = { t: number; equity: number };
   const curve: CurvePoint[] = [];
-  let runCash = DEFAULT_STARTING_CASH;
+  let runCash = startingCash;
   const runPos: Record<string, { qty: number; avg: number }> = {};
   for (const t of trades) {
     const qty = Number(t.qty), price = Number(t.price);
@@ -153,7 +161,7 @@ export async function GET() {
   const worstTrades = [...closed].sort((a, b) => a.pnl - b.pnl).slice(0, 5);
 
   return NextResponse.json({
-    startingCash: DEFAULT_STARTING_CASH,
+    startingCash,
     cash,
     totalValue,
     totalCost,
