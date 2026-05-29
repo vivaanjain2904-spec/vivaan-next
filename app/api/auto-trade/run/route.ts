@@ -59,7 +59,8 @@ function withTimeout<T>(p: Promise<T>, ms: number): Promise<T | null> {
  */
 const MAX_CANDIDATES_TO_SCORE = 80;
 const STRONG_BUY_THRESHOLD = 0.25;         // loosened — was 0.20, before that 0.15
-const MAX_NEW_BUYS_PER_CYCLE = 3;
+const MAX_NEW_BUYS_PER_CYCLE = 5;          // fill positions faster (was 3)
+const ML_RANK_CANDIDATES = 25;             // how many top model-ranked names to score per cycle
 
 export async function POST() {
   const s = await requireSession();
@@ -89,6 +90,19 @@ export async function POST() {
   const reservePct = Number(user.cash_reserve_pct) || 0.15;
   const mlThreshold = Number(user.ml_threshold) || 0.65;
 
+  // ── Python model override ──────────────────────────────────────────────
+  // The cross-sectional model writes percentile-rank drop probabilities to
+  // ml_signals (0 = safest in universe, 1 = riskiest). When a ticker has a row
+  // here we TRADE on the model's score instead of the on-the-fly TA signal.
+  // This is what actually connects the validated Python research to the bot.
+  const mlOverride = new Map<string, number>();
+  try {
+    const r = await sql`SELECT ticker, drop_probability FROM ml_signals`;
+    for (const row of r.rows) mlOverride.set(row.ticker, Number(row.drop_probability));
+  } catch {}
+  const dropProbFor = (ticker: string, taSignal: { dropProb: number } | null): number | null =>
+    mlOverride.has(ticker) ? mlOverride.get(ticker)! : (taSignal?.dropProb ?? null);
+
   // ═══════════════════════════════════════════════════════════════════════
   //  PASS A — SELL: check every held position for stop/target/ML triggers
   // ═══════════════════════════════════════════════════════════════════════
@@ -117,7 +131,9 @@ export async function POST() {
       try {
         const candles = await getChart(p.ticker, "3mo");
         signal = computeSignal(candles);
-        if (signal && signal.dropProb >= mlThreshold) mlHit = true;
+        // Prefer the Python model's score; fall back to TA signal.
+        const dp = dropProbFor(p.ticker, signal);
+        if (dp != null && dp >= mlThreshold) mlHit = true;
       } catch {}
 
       if (stopHit || tgtHit || mlHit) {
@@ -231,7 +247,21 @@ export async function POST() {
     });
   }
 
-  const candidates = POOL.filter(t => !heldSet.has(t));
+  // Candidate list: if the Python model has scored the universe, rank ALL its
+  // names by safety (lowest percentile rank first) and take the top N — this
+  // lets the bot pick from 540+ stocks, not just the curated pool. We only
+  // fetch quotes/charts for these top names, so it stays within rate limits.
+  // Falls back to the curated POOL when no model scores exist.
+  let candidates: string[];
+  if (mlOverride.size > 0) {
+    candidates = [...mlOverride.entries()]
+      .filter(([t]) => !heldSet.has(t))
+      .sort((a, b) => a[1] - b[1])          // safest first
+      .slice(0, ML_RANK_CANDIDATES)
+      .map(([t]) => t);
+  } else {
+    candidates = POOL.filter(t => !heldSet.has(t));
+  }
 
   // Pull quotes for the small pool — fast and reliable
   const quoteMap = await getQuotes(candidates);
@@ -255,13 +285,15 @@ export async function POST() {
       const candles = await withTimeout(getChart(c.ticker, "3mo"), FETCH_TIMEOUT_MS);
       if (!candles) return null;
       const sig = computeSignal(candles);
-      if (!sig) return null;
-      if (sig.dropProb > 0.55) return null; // skip clearly bearish names
+      // Prefer the Python model's score; fall back to TA signal.
+      const dropProb = dropProbFor(c.ticker, sig);
+      if (dropProb == null) return null;
+      if (dropProb > 0.55) return null; // skip clearly bearish names
       const smart = computeSmartStops(candles) ?? undefined;
       const daysToER = await withTimeout(daysUntilEarnings(c.ticker), 2000);
       if (daysToER != null && daysToER >= 0 && daysToER <= 3) return null;
       return {
-        ticker: c.ticker, price: c.q.price, dropProb: sig.dropProb,
+        ticker: c.ticker, price: c.q.price, dropProb,
         smart, daysToER,
       } as Scored;
     })
