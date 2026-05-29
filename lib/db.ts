@@ -52,6 +52,12 @@ export async function initDb() {
   try { await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS max_positions INTEGER NOT NULL DEFAULT 15`; } catch {}
   try { await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS max_pos_pct DOUBLE PRECISION NOT NULL DEFAULT 0.08`; } catch {}
   try { await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS cash_reserve_pct DOUBLE PRECISION NOT NULL DEFAULT 0.15`; } catch {}
+  // Core-satellite + portfolio circuit breaker
+  try { await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS core_ticker TEXT DEFAULT 'VOO'`; } catch {}
+  try { await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS core_pct DOUBLE PRECISION NOT NULL DEFAULT 0`; } catch {}          // 0 = core-satellite off
+  try { await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS peak_equity DOUBLE PRECISION NOT NULL DEFAULT 0`; } catch {}       // high-water mark for drawdown
+  try { await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS circuit_breaker_pct DOUBLE PRECISION NOT NULL DEFAULT 0`; } catch {} // 0 = breaker off
+  try { await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS circuit_breaker_until TIMESTAMPTZ`; } catch {}                      // cooldown end after a breach
   await sql`CREATE TABLE IF NOT EXISTS positions (
     user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
     ticker  TEXT NOT NULL,

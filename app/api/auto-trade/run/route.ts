@@ -68,7 +68,8 @@ export async function POST() {
 
   const ur = await sql`SELECT id, name, cash, autonomous_mode, auto_scan_universe,
     max_positions, max_pos_pct, cash_reserve_pct, auto_buy_size, ml_threshold,
-    alpaca_key, alpaca_secret, auto_trade, ntfy_topic, discord_webhook, email
+    alpaca_key, alpaca_secret, auto_trade, ntfy_topic, discord_webhook, email,
+    core_ticker, core_pct, peak_equity, circuit_breaker_pct, circuit_breaker_until
     FROM users WHERE id=${s.uid}`;
   const user = ur.rows[0];
   if (!user) return NextResponse.json({ error: "user not found" }, { status: 404 });
@@ -90,6 +91,12 @@ export async function POST() {
   const reservePct = Number(user.cash_reserve_pct) || 0.15;
   const mlThreshold = Number(user.ml_threshold) || 0.65;
 
+  // ── Core-satellite + circuit breaker config ──
+  const coreTicker = (user.core_ticker || "VOO").toUpperCase();
+  const corePct = Math.max(0, Math.min(0.9, Number(user.core_pct) || 0));   // 0 = off
+  const breakerPct = Math.max(0, Number(user.circuit_breaker_pct) || 0);    // 0 = off
+  const coreEnabled = corePct > 0;
+
   // ── Python model override ──────────────────────────────────────────────
   // The cross-sectional model writes percentile-rank drop probabilities to
   // ml_signals (0 = safest in universe, 1 = riskiest). When a ticker has a row
@@ -109,11 +116,15 @@ export async function POST() {
   const sellOrders: any[] = [];
   let cashChange = 0;
 
+  let heldQuotes: Record<string, { price: number }> = {};
   if (positions.length > 0) {
     const tickers = positions.map((p: any) => p.ticker);
-    const heldQuotes = await getQuotes(tickers);
+    heldQuotes = await getQuotes(tickers);
 
     for (const p of positions) {
+      // The core index holding is never sold by the model — it's the floor.
+      if (coreEnabled && p.ticker === coreTicker) continue;
+
       const q = heldQuotes[p.ticker];
       if (!q?.price) continue;
       const px = q.price;
@@ -188,14 +199,103 @@ export async function POST() {
     }
   }
 
-  // Total equity (cash + position market value, valued at avg_cost for speed)
+  // ── Equity at MARKET value (honest drawdown needs live prices, not avg cost) ──
+  const mv = (p: any): number => {
+    const px = heldQuotes[p.ticker]?.price;
+    return Number(p.qty) * (px && px > 0 ? px : Number(p.avg_cost));
+  };
   let cash = Number(user.cash) + cashChange;
-  let positionValue = 0;
-  for (const p of positions) positionValue += Number(p.qty) * Number(p.avg_cost);
+  let positionValue = positions.reduce((sum, p) => sum + mv(p), 0);
   const totalEquity = cash + positionValue;
-  const maxDeployable = Math.max(0, totalEquity * (1 - reservePct) - positionValue);
+
+  // ── Portfolio circuit breaker ───────────────────────────────────────────
+  // High-water mark; if equity falls > breakerPct below it, liquidate the
+  // SATELLITE (sell all but the core index) and pause new buys for a cooldown.
+  // This is the hard floor on losses.
+  const prevPeak = Number(user.peak_equity) || 0;
+  const peak = Math.max(prevPeak, totalEquity);
+  if (peak > prevPeak) await sql`UPDATE users SET peak_equity=${peak} WHERE id=${user.id}`;
+  const breakerUntil = user.circuit_breaker_until ? new Date(user.circuit_breaker_until) : null;
+  const inCooldown = breakerUntil != null && breakerUntil.getTime() > Date.now();
+  const drawdown = peak > 0 ? (totalEquity - peak) / peak : 0;
+
+  if (breakerPct > 0 && drawdown <= -breakerPct && !inCooldown) {
+    const liq: any[] = [];
+    for (const p of positions) {
+      if (coreEnabled && p.ticker === coreTicker) continue;   // keep the core
+      const px = heldQuotes[p.ticker]?.price ?? Number(p.avg_cost);
+      const qty = Number(p.qty);
+      const proceeds = qty * px;
+      if (user.alpaca_key && user.alpaca_secret) {
+        try { await alpacaSell({ key: user.alpaca_key, secret: user.alpaca_secret }, p.ticker, qty); } catch {}
+      }
+      try {
+        await sql`DELETE FROM positions WHERE user_id=${user.id} AND ticker=${p.ticker}`;
+        await sql`UPDATE users SET cash = cash + ${proceeds} WHERE id=${user.id}`;
+        await sql`INSERT INTO trades (user_id, ticker, side, qty, price) VALUES (${user.id}, ${p.ticker}, 'SELL', ${qty}, ${px})`;
+        liq.push({ ticker: p.ticker, qty, price: px });
+      } catch {}
+    }
+    const cooldownDays = 7;
+    const until = new Date(Date.now() + cooldownDays * 86400_000).toISOString();
+    await sql`UPDATE users SET circuit_breaker_until=${until} WHERE id=${user.id}`;
+    const title = `🛑 Circuit breaker tripped (${(drawdown * 100).toFixed(1)}% drawdown)`;
+    const body = `Liquidated ${liq.length} satellite positions, kept ${coreEnabled ? coreTicker + " core" : "nothing"}. New buys paused ${cooldownDays}d.`;
+    try {
+      await sql`INSERT INTO notifications (user_id, ticker, kind, title, body) VALUES (${user.id}, NULL, 'circuit_breaker', ${title}, ${body})`;
+      await alertUser(user as any, title, body);
+    } catch {}
+    return NextResponse.json({ ok: true, cycled: true, circuitBreaker: true,
+      drawdownPct: drawdown * 100, liquidated: liq, sells: sellOrders, msg: `${title}. ${body}` });
+  }
+  if (inCooldown) {
+    return NextResponse.json({ ok: true, cycled: true, skipped: "circuit_breaker_cooldown",
+      until: breakerUntil, sells: sellOrders,
+      msg: `Sold ${sellOrders.length}. Circuit-breaker cooldown until ${breakerUntil!.toISOString().slice(0, 10)} — no new buys.` });
+  }
+
+  // ── Core rebalance: keep the index core at its target weight ──────────────
+  let coreNote: string | null = null;
+  if (coreEnabled) {
+    const coreTarget = totalEquity * corePct;
+    const corePos = positions.find((p: any) => p.ticker === coreTicker);
+    const coreVal = corePos ? mv(corePos) : 0;
+    const shortfall = coreTarget - coreVal;
+    if (shortfall > totalEquity * 0.02) {                 // only act if >2% off target
+      try {
+        const cq = (await getQuotes([coreTicker]))[coreTicker];
+        const cpx = cq?.price;
+        if (cpx && cpx > 0) {
+          const qty = Math.floor(Math.min(shortfall, cash) / cpx);
+          if (qty >= 1) {
+            const cost = qty * cpx;
+            if (user.alpaca_key && user.alpaca_secret) {
+              try { await alpacaBuy({ key: user.alpaca_key, secret: user.alpaca_secret }, coreTicker, qty); } catch {}
+            }
+            const newQty = (corePos ? Number(corePos.qty) : 0) + qty;
+            const newAvg = corePos ? ((Number(corePos.qty) * Number(corePos.avg_cost)) + cost) / newQty : cpx;
+            await sql`INSERT INTO positions (user_id, ticker, qty, avg_cost) VALUES (${user.id}, ${coreTicker}, ${qty}, ${cpx})
+              ON CONFLICT (user_id, ticker) DO UPDATE SET qty=${newQty}, avg_cost=${newAvg}`;
+            await sql`UPDATE users SET cash = cash - ${cost} WHERE id=${user.id}`;
+            await sql`INSERT INTO trades (user_id, ticker, side, qty, price) VALUES (${user.id}, ${coreTicker}, 'BUY', ${qty}, ${cpx})`;
+            cash -= cost;
+            coreNote = `Bought ${qty} ${coreTicker} core ($${cost.toFixed(0)})`;
+          }
+        }
+      } catch {}
+    }
+    const refreshed = await sql`SELECT ticker, qty, avg_cost FROM positions WHERE user_id=${user.id} AND qty > 0`;
+    positions = refreshed.rows;
+    heldSet = new Set(positions.map((p: any) => p.ticker));
+  }
+
+  // ── Satellite budget: only the non-core sleeve funds model buys ──
+  const isSatellite = (t: string) => !(coreEnabled && t === coreTicker);
+  const satelliteValue = positions.filter((p: any) => isSatellite(p.ticker)).reduce((s, p) => s + mv(p), 0);
+  const satelliteCap = totalEquity * (1 - corePct) * (1 - reservePct);
+  const maxDeployable = Math.max(0, satelliteCap - satelliteValue);
   const cashAvailable = Math.min(cash, maxDeployable);
-  const openCount = positions.length;
+  const openCount = positions.filter((p: any) => isSatellite(p.ticker)).length;  // core doesn't use a slot
 
   if (openCount >= maxPositions) {
     return NextResponse.json({
@@ -386,6 +486,9 @@ export async function POST() {
     regime,
     orders,
     sells: sellOrders,
+    core: coreEnabled ? { ticker: coreTicker, targetPct: corePct, action: coreNote } : null,
+    circuitBreaker: { pct: breakerPct, peak, drawdownPct: drawdown * 100 },
+    usedModel: mlOverride.size > 0,
     safetyRails: {
       maxPositions, openBefore: openCount,
       maxPosPct, reservePct,
@@ -393,6 +496,7 @@ export async function POST() {
       threshold: STRONG_BUY_THRESHOLD,
     },
     msg: [
+      coreNote,
       sellOrders.length > 0 ? `Sold ${sellOrders.length}` : null,
       boughtCount > 0 ? `Bought ${boughtCount}` : (scored.length ? `${scored.length} candidates didn't fit sizing rules` : null),
     ].filter(Boolean).join(" · ") || "No actions this cycle.",
