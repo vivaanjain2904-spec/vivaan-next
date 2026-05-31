@@ -52,11 +52,48 @@ export async function getQuote(ticker: string): Promise<Quote | null> {
   }
 }
 
+// Real-time quotes from Alpaca's free IEX snapshot feed (one call, many symbols).
+// Uses platform data keys; returns {} on missing keys / failure so callers fall
+// back to the delayed Yahoo path.
+async function getQuotesAlpaca(tickers: string[]): Promise<Record<string, Quote>> {
+  const key = process.env.ALPACA_DATA_KEY || process.env.ALPACA_KEY;
+  const secret = process.env.ALPACA_DATA_SECRET || process.env.ALPACA_SECRET;
+  const out: Record<string, Quote> = {};
+  if (!key || !secret || !tickers.length) return out;
+  const syms = tickers.map(t => t.toUpperCase()).join(",");
+  try {
+    const r = await fetch(
+      `https://data.alpaca.markets/v2/stocks/snapshots?symbols=${encodeURIComponent(syms)}&feed=iex`,
+      { headers: { "APCA-API-KEY-ID": key, "APCA-API-SECRET-KEY": secret }, next: { revalidate: 0 } });
+    if (!r.ok) return out;
+    const j = await r.json();
+    const snaps = j?.snapshots ?? j ?? {};
+    for (const [sym, s] of Object.entries<any>(snaps)) {
+      const last = Number(s?.latestTrade?.p) ||
+        (s?.latestQuote ? (Number(s.latestQuote.ap) + Number(s.latestQuote.bp)) / 2 : 0);
+      const prev = Number(s?.prevDailyBar?.c) || Number(s?.dailyBar?.o) || 0;
+      if (!last) continue;
+      const tk = sym.toUpperCase();
+      out[tk] = {
+        ticker: tk, price: last, prevClose: prev || undefined,
+        change: prev ? last - prev : 0,
+        changePct: prev > 0 ? ((last - prev) / prev) * 100 : 0,
+      };
+    }
+  } catch {}
+  return out;
+}
+
 export async function getQuotes(tickers: string[]): Promise<Record<string, Quote>> {
   if (!tickers.length) return {};
-  const arr = await Promise.all(tickers.map(t => getQuote(t)));
-  const out: Record<string, Quote> = {};
-  arr.forEach(q => { if (q) out[q.ticker] = q; });
+  // 1) Real-time via Alpaca where available.
+  const out = await getQuotesAlpaca(tickers);
+  // 2) Fill gaps with delayed Yahoo for anything Alpaca didn't return.
+  const missing = tickers.map(t => t.toUpperCase()).filter(t => !out[t]);
+  if (missing.length) {
+    const arr = await Promise.all(missing.map(t => getQuote(t)));
+    arr.forEach(q => { if (q) out[q.ticker] = q; });
+  }
   return out;
 }
 
