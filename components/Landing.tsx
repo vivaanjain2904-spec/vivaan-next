@@ -32,6 +32,9 @@ function NavBar() {
           <a href="#how" className="hidden sm:inline text-[13px] text-ink2 hover:text-ink transition-colors px-3 py-2">
             How it works
           </a>
+          <Link href="/track-record" className="hidden sm:inline text-[13px] text-mint hover:opacity-80 transition-opacity px-3 py-2">
+            Live results
+          </Link>
           <Link href="/login" className="text-[13px] text-ink2 hover:text-ink transition-colors px-3 py-2">
             Sign in
           </Link>
