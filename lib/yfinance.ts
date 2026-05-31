@@ -71,13 +71,19 @@ async function getQuotesAlpaca(tickers: string[]): Promise<Record<string, Quote>
     for (const [sym, s] of Object.entries<any>(snaps)) {
       const last = Number(s?.latestTrade?.p) ||
         (s?.latestQuote ? (Number(s.latestQuote.ap) + Number(s.latestQuote.bp)) / 2 : 0);
-      const prev = Number(s?.prevDailyBar?.c) || Number(s?.dailyBar?.o) || 0;
+      const day = s?.dailyBar ?? {};
+      const prev = Number(s?.prevDailyBar?.c) || Number(day.o) || 0;
       if (!last) continue;
       const tk = sym.toUpperCase();
       out[tk] = {
-        ticker: tk, price: last, prevClose: prev || undefined,
-        change: prev ? last - prev : 0,
-        changePct: prev > 0 ? ((last - prev) / prev) * 100 : 0,
+        ticker: tk,
+        price: last,
+        pct: prev > 0 ? ((last - prev) / prev) * 100 : 0,
+        hi52: 0, lo52: 0, name: tk,
+        open: Number(day.o) || undefined,
+        high: Number(day.h) || undefined,
+        low: Number(day.l) || undefined,
+        vol: Number(day.v) || undefined,
       };
     }
   } catch {}
