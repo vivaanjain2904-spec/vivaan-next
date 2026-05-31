@@ -117,4 +117,19 @@ export async function initDb() {
     targets JSONB NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )`;
+  // Public, forward-only live track record of the factor STRATEGY vs SPY.
+  // Both indexed to 100 on day one. No backtest backfill — honest live curve only.
+  await sql`CREATE TABLE IF NOT EXISTS strategy_nav (
+    as_of DATE PRIMARY KEY,
+    strategy_nav DOUBLE PRECISION NOT NULL,
+    spy_nav DOUBLE PRECISION NOT NULL,
+    regime TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`;
+  // Last-seen close per ticker, so the daily NAV snapshot can compute returns.
+  await sql`CREATE TABLE IF NOT EXISTS nav_prices (
+    ticker TEXT PRIMARY KEY,
+    price DOUBLE PRECISION NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`;
 }
