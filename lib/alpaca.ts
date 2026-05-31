@@ -48,3 +48,17 @@ export async function alpacaPing(c: Creds): Promise<{ ok: boolean; account?: any
     return { ok: false, error: String(e?.message ?? e) };
   }
 }
+
+/** Live broker positions, keyed by ticker → qty. Used for reconciliation. */
+export async function alpacaPositions(c: Creds): Promise<{ ok: boolean; positions?: Record<string, number>; error?: string }> {
+  try {
+    const r = await fetch(`${PAPER_BASE}/v2/positions`, { headers: headers(c) });
+    const j = await r.json();
+    if (!r.ok) return { ok: false, error: j.message ?? `HTTP ${r.status}` };
+    const positions: Record<string, number> = {};
+    for (const p of j) positions[String(p.symbol).toUpperCase()] = Number(p.qty);
+    return { ok: true, positions };
+  } catch (e: any) {
+    return { ok: false, error: String(e?.message ?? e) };
+  }
+}
