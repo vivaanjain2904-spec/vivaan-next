@@ -12,8 +12,10 @@ export default function Landing() {
     <div className="min-h-screen bg-bg text-ink">
       <NavBar />
       <Hero />
+      <TrackRecordStrip />
       <FeaturesSection />
       <HowItWorks />
+      <FounderBand />
       <CTASection />
       <FooterBar />
     </div>
@@ -34,6 +36,9 @@ function NavBar() {
           </a>
           <Link href="/track-record" className="hidden sm:inline text-[13px] text-mint hover:opacity-80 transition-opacity px-3 py-2">
             Live results
+          </Link>
+          <Link href="/founder" className="hidden sm:inline text-[13px] text-ink2 hover:text-ink transition-colors px-3 py-2">
+            Founder
           </Link>
           <Link href="/login" className="text-[13px] text-ink2 hover:text-ink transition-colors px-3 py-2">
             Sign in
@@ -157,6 +162,69 @@ function HowItWorks() {
           <Step n={3} title="Set thresholds — or don't" desc="One-click 'Apply Recommendation' uses each stock's volatility to set sensible stop-loss & take-profit, plus a smart review window." />
           <Step n={4} title="Live alerts on every channel" desc="The moment a position hits stop-loss, take-profit, or your ML risk threshold, you're notified across email, push, and Discord." />
           <Step n={5} title="Optional: hands-off auto-trade" desc="Connect an Alpaca paper account and Vaelor executes for you. You stay in school. The bot stays awake." />
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* Proof strip: the validated edge + live track-record link (the differentiator). */
+function TrackRecordStrip() {
+  const stats = [
+    { n: "5 / 5", k: "Beat the S&P 500 in every period tested (2017–2026)" },
+    { n: "9 yrs", k: "Walk-forward validated across every market regime" },
+    { n: "Live", k: "Real, dated track record — building in public" },
+    { n: "100%", k: "Autonomous — researches, trades & protects itself" },
+  ];
+  return (
+    <section className="border-b border-border1/50 bg-bg2/40">
+      <div className="max-w-7xl mx-auto px-5 sm:px-8 py-12">
+        <div className="flex items-end justify-between gap-4 mb-7">
+          <div>
+            <div className="text-mint text-[11px] font-semibold tracking-[0.2em] uppercase mb-2">Validated, not hyped</div>
+            <h2 className="text-2xl sm:text-3xl font-bold tracking-tight">A strategy proven against the market.</h2>
+          </div>
+          <Link href="/track-record" className="hidden sm:inline-flex btn-ghost text-[13px] items-center gap-2 shrink-0">
+            See live results
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5"><polyline points="9 18 15 12 9 6"/></svg>
+          </Link>
+        </div>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-px bg-border1/60 rounded-xl overflow-hidden border border-border1/60">
+          {stats.map((s) => (
+            <div key={s.n} className="bg-bg p-5">
+              <div className="text-2xl sm:text-3xl font-bold text-mint tracking-tight tabular-nums">{s.n}</div>
+              <div className="text-[12px] text-muted mt-2 leading-snug">{s.k}</div>
+            </div>
+          ))}
+        </div>
+        <p className="text-[11px] text-muted mt-4">
+          Backtested results carry survivorship bias; the live track record is the honest forward test. Past performance does not guarantee future results.
+        </p>
+      </div>
+    </section>
+  );
+}
+
+/* Founder credibility band — links to the full /founder page. */
+function FounderBand() {
+  return (
+    <section className="border-b border-border1/50">
+      <div className="max-w-7xl mx-auto px-5 sm:px-8 py-14">
+        <div className="panel flex flex-col sm:flex-row items-start sm:items-center gap-6">
+          <div className="w-16 h-16 rounded-xl border border-border2 bg-bg2 flex items-center justify-center shrink-0">
+            <span className="text-2xl font-bold text-mint tracking-tight">VJ</span>
+          </div>
+          <div className="flex-1">
+            <div className="text-mint text-[11px] font-semibold tracking-[0.2em] uppercase mb-1.5">Built by a founder, in the open</div>
+            <p className="text-ink2 text-[14.5px] leading-relaxed max-w-2xl">
+              <span className="text-ink font-semibold">Vivaan Jain</span> — Economics &amp; Finance student at ASU —
+              designed, built, and deployed Vaelor end-to-end: the ML research, the live auto-trading, and the risk controls.
+            </p>
+          </div>
+          <Link href="/founder" className="btn-ghost text-[13px] inline-flex items-center gap-2 shrink-0">
+            Meet the founder
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5"><polyline points="9 18 15 12 9 6"/></svg>
+          </Link>
         </div>
       </div>
     </section>
