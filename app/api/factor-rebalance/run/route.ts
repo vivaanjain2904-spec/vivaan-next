@@ -6,7 +6,8 @@ import { alpacaBuy, alpacaSell } from "@/lib/alpaca";
 import { alertUser } from "@/lib/ntfy";
 
 export const maxDuration = 60;
-const MIN_TRADE = 50;   // ignore rebalance trades smaller than $50
+const MIN_TRADE = 50;        // ignore rebalance trades smaller than $50 (absolute)
+const REBALANCE_BAND = 0.015; // and ignore drift smaller than 1.5% of portfolio (no-trade band)
 
 /**
  * POST /api/factor-rebalance/run
@@ -89,7 +90,9 @@ async function rebalanceUser(user: any, target: any) {
     const targetDollars = Number(targets[tk]) * equity;
     const cur = held[tk] || { qty: 0, avg: 0 };
     const deltaDollars = targetDollars - cur.qty * px;
-    if (Math.abs(deltaDollars) < MIN_TRADE) continue;
+    // No-trade band: skip unless drift exceeds BOTH the absolute floor and 1.5%
+    // of the portfolio. Cuts needless turnover/costs on tiny rebalances.
+    if (Math.abs(deltaDollars) < MIN_TRADE || Math.abs(deltaDollars) < REBALANCE_BAND * equity) continue;
     const deltaShares = Math.floor(Math.abs(deltaDollars) / px);
     if (deltaShares < 1) continue;
 
