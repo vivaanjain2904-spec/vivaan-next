@@ -21,19 +21,42 @@ export type Quote = {
   vol?: number; mcap?: number;
 };
 
+// Real-time last trade for ONE symbol from Alpaca's free IEX feed.
+// Returns {price, prevClose} or null (missing keys / failure → caller uses Yahoo).
+async function getAlpacaPrice(tk: string): Promise<{ price: number; prevClose: number } | null> {
+  const key = process.env.ALPACA_DATA_KEY || process.env.ALPACA_KEY;
+  const secret = process.env.ALPACA_DATA_SECRET || process.env.ALPACA_SECRET;
+  if (!key || !secret) return null;
+  try {
+    const r = await fetch(
+      `https://data.alpaca.markets/v2/stocks/${encodeURIComponent(tk)}/snapshot?feed=iex`,
+      { headers: { "APCA-API-KEY-ID": key, "APCA-API-SECRET-KEY": secret }, next: { revalidate: 0 } });
+    if (!r.ok) return null;
+    const s: any = await r.json();
+    const price = Number(s?.latestTrade?.p) ||
+      (s?.latestQuote ? (Number(s.latestQuote.ap) + Number(s.latestQuote.bp)) / 2 : 0);
+    const prevClose = Number(s?.prevDailyBar?.c) || Number(s?.dailyBar?.o) || 0;
+    return price > 0 ? { price, prevClose } : null;
+  } catch { return null; }
+}
+
 export async function getQuote(ticker: string): Promise<Quote | null> {
   const tk = ticker.toUpperCase();
   try {
-    const j: any = await _yfetch(
-      `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(tk)}?interval=1d&range=5d`,
-    );
-    const r = j?.chart?.result?.[0];
-    if (!r) return null;
-    const m = r.meta ?? {};
-    const closes: (number | null)[] = r.indicators?.quote?.[0]?.close ?? [];
+    // Yahoo gives name + 52-week range + day OHLC; fetch it for the metadata.
+    const [j, rt] = await Promise.all([
+      _yfetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(tk)}?interval=1d&range=5d`).catch(() => null),
+      getAlpacaPrice(tk),   // real-time price overlay
+    ]);
+    const r = (j as any)?.chart?.result?.[0];
+    if (!r && !rt) return null;
+    const m = r?.meta ?? {};
+    const closes: (number | null)[] = r?.indicators?.quote?.[0]?.close ?? [];
     const valid = closes.filter(c => c != null) as number[];
-    const price = m.regularMarketPrice ?? valid[valid.length - 1] ?? 0;
-    const prev  = m.chartPreviousClose ?? m.previousClose ?? valid[valid.length - 2] ?? price;
+    // Prefer Alpaca real-time price; fall back to Yahoo's (delayed) price.
+    const yahooPrice = m.regularMarketPrice ?? valid[valid.length - 1] ?? 0;
+    const price = rt?.price ?? yahooPrice;
+    const prev = rt?.prevClose || m.chartPreviousClose || m.previousClose || valid[valid.length - 2] || price;
     return {
       ticker: tk,
       price,
@@ -41,7 +64,7 @@ export async function getQuote(ticker: string): Promise<Quote | null> {
       hi52: m.fiftyTwoWeekHigh ?? 0,
       lo52: m.fiftyTwoWeekLow ?? 0,
       name: m.longName ?? m.shortName ?? tk,
-      open: r.indicators?.quote?.[0]?.open?.find((x: any) => x != null),
+      open: r?.indicators?.quote?.[0]?.open?.find((x: any) => x != null),
       high: m.regularMarketDayHigh,
       low:  m.regularMarketDayLow,
       vol:  m.regularMarketVolume,
