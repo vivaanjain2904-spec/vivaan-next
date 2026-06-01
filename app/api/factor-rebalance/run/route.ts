@@ -48,21 +48,35 @@ async function rebalanceUser(user: any, target: any) {
 
   const trades: any[] = [];
 
+  const live = !!(user.alpaca_key && user.alpaca_secret);
+  const creds = { key: user.alpaca_key, secret: user.alpaca_secret };
+
   // 1) SELL anything not in the target
   for (const p of positions) {
     if (tgtTickers.includes(p.ticker)) continue;
     const px = quotes[p.ticker]?.price;
     if (!px) continue;
-    const qty = Number(p.qty);
-    if (user.alpaca_key && user.alpaca_secret) {
-      try { await alpacaSell({ key: user.alpaca_key, secret: user.alpaca_secret }, p.ticker, qty); } catch {}
+    let qty = Number(p.qty);
+    let fillPx = px;
+    if (live) {
+      // Real broker order: record only what actually filled, at the real price.
+      const r = await alpacaSell(creds, p.ticker, qty).catch(() => null);
+      if (!r || !r.ok || !r.filledQty) {
+        trades.push({ ticker: p.ticker, side: "SELL", qty: 0, price: px, reason: "not-in-target", skipped: r?.error ?? "no fill" });
+        continue;   // nothing filled → leave DB untouched (no drift)
+      }
+      qty = r.filledQty;
+      fillPx = r.filledAvgPrice ?? px;
     }
-    await sql`DELETE FROM positions WHERE user_id=${user.id} AND ticker=${p.ticker}`;
-    await sql`UPDATE users SET cash=cash+${qty * px} WHERE id=${user.id}`;
-    await sql`INSERT INTO trades (user_id,ticker,side,qty,price) VALUES (${user.id},${p.ticker},'SELL',${qty},${px})`;
-    cash += qty * px;
-    delete held[p.ticker];
-    trades.push({ ticker: p.ticker, side: "SELL", qty, price: px, reason: "not-in-target" });
+    // Update DB by the (possibly partial) filled qty
+    const remaining = Number(p.qty) - qty;
+    if (remaining > 0.0001) await sql`UPDATE positions SET qty=${remaining} WHERE user_id=${user.id} AND ticker=${p.ticker}`;
+    else { await sql`DELETE FROM positions WHERE user_id=${user.id} AND ticker=${p.ticker}`; delete held[p.ticker]; }
+    await sql`UPDATE users SET cash=cash+${qty * fillPx} WHERE id=${user.id}`;
+    await sql`INSERT INTO trades (user_id,ticker,side,qty,price) VALUES (${user.id},${p.ticker},'SELL',${qty},${fillPx})`;
+    cash += qty * fillPx;
+    if (remaining > 0.0001 && held[p.ticker]) held[p.ticker].qty = remaining;
+    trades.push({ ticker: p.ticker, side: "SELL", qty, price: fillPx, reason: "not-in-target" });
   }
 
   // 2) Rebalance each target name to weight × equity
@@ -77,35 +91,50 @@ async function rebalanceUser(user: any, target: any) {
     if (deltaShares < 1) continue;
 
     if (deltaDollars > 0) {                       // BUY
-      const cost = deltaShares * px;
-      if (cost > cash) continue;
-      if (user.alpaca_key && user.alpaca_secret) {
-        try { await alpacaBuy({ key: user.alpaca_key, secret: user.alpaca_secret }, tk, deltaShares); } catch {}
+      let qty = deltaShares;
+      if (deltaShares * px > cash) continue;
+      let fillPx = px;
+      if (live) {
+        const r = await alpacaBuy(creds, tk, deltaShares).catch(() => null);
+        if (!r || !r.ok || !r.filledQty) {
+          trades.push({ ticker: tk, side: "BUY", qty: 0, price: px, reason: "rebalance", skipped: r?.error ?? "no fill" });
+          continue;
+        }
+        qty = r.filledQty;
+        fillPx = r.filledAvgPrice ?? px;
       }
-      const newQty = cur.qty + deltaShares;
-      const newAvg = cur.qty > 0 ? (cur.qty * cur.avg + cost) / newQty : px;
-      await sql`INSERT INTO positions (user_id,ticker,qty,avg_cost) VALUES (${user.id},${tk},${deltaShares},${px})
+      const cost = qty * fillPx;
+      const newQty = cur.qty + qty;
+      const newAvg = cur.qty > 0 ? (cur.qty * cur.avg + cost) / newQty : fillPx;
+      await sql`INSERT INTO positions (user_id,ticker,qty,avg_cost) VALUES (${user.id},${tk},${qty},${fillPx})
         ON CONFLICT (user_id,ticker) DO UPDATE SET qty=${newQty}, avg_cost=${newAvg}`;
       await sql`UPDATE users SET cash=cash-${cost} WHERE id=${user.id}`;
-      await sql`INSERT INTO trades (user_id,ticker,side,qty,price) VALUES (${user.id},${tk},'BUY',${deltaShares},${px})`;
+      await sql`INSERT INTO trades (user_id,ticker,side,qty,price) VALUES (${user.id},${tk},'BUY',${qty},${fillPx})`;
       cash -= cost;
       held[tk] = { qty: newQty, avg: newAvg };
-      trades.push({ ticker: tk, side: "BUY", qty: deltaShares, price: px, reason: "rebalance" });
+      trades.push({ ticker: tk, side: "BUY", qty, price: fillPx, reason: "rebalance" });
     } else {                                      // SELL down to target
-      const sellQty = Math.min(deltaShares, cur.qty);
+      let sellQty = Math.min(deltaShares, cur.qty);
       if (sellQty < 1) continue;
-      const proceeds = sellQty * px;
-      if (user.alpaca_key && user.alpaca_secret) {
-        try { await alpacaSell({ key: user.alpaca_key, secret: user.alpaca_secret }, tk, sellQty); } catch {}
+      let fillPx = px;
+      if (live) {
+        const r = await alpacaSell(creds, tk, sellQty).catch(() => null);
+        if (!r || !r.ok || !r.filledQty) {
+          trades.push({ ticker: tk, side: "SELL", qty: 0, price: px, reason: "trim-to-target", skipped: r?.error ?? "no fill" });
+          continue;
+        }
+        sellQty = r.filledQty;
+        fillPx = r.filledAvgPrice ?? px;
       }
+      const proceeds = sellQty * fillPx;
       const newQty = cur.qty - sellQty;
-      if (newQty <= 0) await sql`DELETE FROM positions WHERE user_id=${user.id} AND ticker=${tk}`;
+      if (newQty <= 0.0001) await sql`DELETE FROM positions WHERE user_id=${user.id} AND ticker=${tk}`;
       else await sql`UPDATE positions SET qty=${newQty} WHERE user_id=${user.id} AND ticker=${tk}`;
       await sql`UPDATE users SET cash=cash+${proceeds} WHERE id=${user.id}`;
-      await sql`INSERT INTO trades (user_id,ticker,side,qty,price) VALUES (${user.id},${tk},'SELL',${sellQty},${px})`;
+      await sql`INSERT INTO trades (user_id,ticker,side,qty,price) VALUES (${user.id},${tk},'SELL',${sellQty},${fillPx})`;
       cash += proceeds;
       held[tk] = { qty: newQty, avg: cur.avg };
-      trades.push({ ticker: tk, side: "SELL", qty: sellQty, price: px, reason: "trim-to-target" });
+      trades.push({ ticker: tk, side: "SELL", qty: sellQty, price: fillPx, reason: "trim-to-target" });
     }
   }
 
