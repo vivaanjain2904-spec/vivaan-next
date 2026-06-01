@@ -53,6 +53,7 @@ async function rebalanceUser(user: any, target: any) {
 
   // 1) SELL anything not in the target
   for (const p of positions) {
+   try {
     if (tgtTickers.includes(p.ticker)) continue;
     const px = quotes[p.ticker]?.price;
     if (!px) continue;
@@ -77,10 +78,12 @@ async function rebalanceUser(user: any, target: any) {
     cash += qty * fillPx;
     if (remaining > 0.0001 && held[p.ticker]) held[p.ticker].qty = remaining;
     trades.push({ ticker: p.ticker, side: "SELL", qty, price: fillPx, reason: "not-in-target" });
+   } catch (e: any) { trades.push({ ticker: p.ticker, side: "SELL", qty: 0, price: 0, reason: "not-in-target", skipped: `error: ${String(e?.message ?? e).slice(0,80)}` }); }
   }
 
   // 2) Rebalance each target name to weight × equity
   for (const tk of tgtTickers) {
+   try {
     const px = quotes[tk]?.price;
     if (!px || px <= 0) continue;
     const targetDollars = Number(targets[tk]) * equity;
@@ -136,10 +139,11 @@ async function rebalanceUser(user: any, target: any) {
       held[tk] = { qty: newQty, avg: cur.avg };
       trades.push({ ticker: tk, side: "SELL", qty: sellQty, price: fillPx, reason: "trim-to-target" });
     }
+   } catch (e: any) { trades.push({ ticker: tk, side: "BUY", qty: 0, price: 0, reason: "rebalance", skipped: `error: ${String(e?.message ?? e).slice(0,80)}` }); }
   }
 
-  const buys = trades.filter(t => t.side === "BUY").length;
-  const sells = trades.filter(t => t.side === "SELL").length;
+  const buys = trades.filter(t => t.side === "BUY" && t.qty > 0).length;
+  const sells = trades.filter(t => t.side === "SELL" && t.qty > 0).length;
   if (trades.length) {
     const title = `🎯 Factor rebalance: ${buys} buys, ${sells} sells`;
     const body = `Rebalanced toward ${tgtTickers.length}-name target (${target.regime}, ` +
@@ -176,7 +180,11 @@ export async function POST(req: Request) {
       // Any account opted into the factor strategy (plus the legacy default account).
       const users = await sql`SELECT * FROM users WHERE strategy = 'factor' OR name = ${factorAccount}`;
       const results = [];
-      for (const u of users.rows) results.push(await rebalanceUser(u, target));
+      // Isolate each account: one user's failure must not abort the others' rebalance.
+      for (const u of users.rows) {
+        try { results.push(await rebalanceUser(u, target)); }
+        catch (e: any) { results.push({ user: u.name, error: String(e?.message ?? e) }); }
+      }
       return NextResponse.json({ ok: true, mode: "automated", account: factorAccount, users: results.length, results });
     }
 

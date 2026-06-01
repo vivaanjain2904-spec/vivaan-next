@@ -64,9 +64,21 @@ async function _order(c: Creds, symbol: string, qty: number, side: "buy" | "sell
       body.type = "market";   // no price feed → fall back
     }
 
-    const r = await fetch(`${PAPER_BASE}/v2/orders`, { method: "POST", headers: headers(c), body: JSON.stringify(body) });
-    const j = await r.json();
-    if (!r.ok) return { ok: false, error: j.message ?? `HTTP ${r.status}` };
+    // Submit with one retry on transient (5xx / network) failures.
+    let j: any = null, submitted = false;
+    for (let attempt = 0; attempt < 2 && !submitted; attempt++) {
+      try {
+        const r = await fetch(`${PAPER_BASE}/v2/orders`, { method: "POST", headers: headers(c), body: JSON.stringify(body) });
+        j = await r.json();
+        if (r.ok) { submitted = true; break; }
+        // 4xx (e.g. insufficient buying power) → don't retry, it'll just fail again
+        if (r.status < 500) return { ok: false, error: j.message ?? `HTTP ${r.status}` };
+      } catch (e: any) {
+        j = { _err: String(e?.message ?? e) };
+      }
+      if (attempt === 0) await new Promise(res => setTimeout(res, 500));
+    }
+    if (!submitted) return { ok: false, error: j?.message ?? j?._err ?? "order submit failed after retry" };
 
     const id = j.id as string;
     // Poll for fill confirmation
