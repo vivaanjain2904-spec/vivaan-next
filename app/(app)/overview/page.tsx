@@ -6,7 +6,7 @@ import Sparkline from "@/components/Sparkline";
 import Allocation from "@/components/Allocation";
 
 type PortfolioRes = {
-  user: { name: string; cash: number; ml_threshold: number };
+  user: { name: string; cash: number; ml_threshold: number; ml_alerts?: boolean; autonomous_mode?: boolean; strategy?: string };
   positions: { ticker: string; qty: number; avg_cost: number; stop_loss: number | null; take_profit: number | null; review_at?: string | null }[];
   watchlist: any[];
   quotes: Record<string, { price: number; pct: number; hi52: number; lo52: number; name: string }>;
@@ -411,6 +411,25 @@ export default function OverviewPage() {
       )}
       {AlertBanner}
       {QuickTools}
+
+      {/* Subtle status row — shows what's on; quiet "Enable →" link only when off */}
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-2 mb-7 -mt-3 text-[11.5px]">
+        {[
+          { on: !!d.user.ml_alerts, label: "ML signals", href: "/settings#ml-signals" },
+          { on: !!d.user.autonomous_mode, label: "Auto-trader", href: "/settings#auto-trader" },
+        ].map(s => (
+          <span key={s.label} className="inline-flex items-center gap-1.5">
+            <span className={`w-1.5 h-1.5 rounded-full ${s.on ? "bg-mint" : "bg-border2"}`} />
+            <span className="text-muted">{s.label}</span>
+            <span className={s.on ? "text-mint font-semibold" : "text-ink2"}>{s.on ? "On" : "Off"}</span>
+            {!s.on && (
+              <a href={s.href} className="text-mint/80 hover:text-mint underline underline-offset-2 ml-0.5">
+                Enable →
+              </a>
+            )}
+          </span>
+        ))}
+      </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-7">
         <Kpi label="Total Value" value={fp(totalVal + cash)}
