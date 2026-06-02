@@ -24,6 +24,27 @@ const FEATURE_CARDS: NavCard[] = [
   { href: "/backtest",    iconKey: "back",   title: "Backtest",    desc: "Test your strategy against historical data" },
 ];
 
+// Quick-start tiles — short label, redirect, thin-line icon. ML signals +
+// auto-trader cards deep-link straight to their toggles in Settings.
+const QUICK_CARDS: { href: string; label: string; sub: string; icon: React.ReactNode }[] = [
+  { href: "/suggestions", label: "Get trade ideas", sub: "Review & approve",
+    icon: <><path d="M9 11l3 3L22 4" /><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11" /></> },
+  { href: "/settings#auto-trader", label: "Turn on the bot", sub: "Auto-trade mode",
+    icon: <><rect x="4" y="4" width="16" height="16" rx="2" /><rect x="9" y="9" width="6" height="6" /></> },
+  { href: "/settings#ml-signals", label: "Enable ML signals", sub: "Smart sell alerts",
+    icon: <><path d="M12 2a4 4 0 014 4 4 4 0 01-1 8 4 4 0 01-7 0 4 4 0 01-1-8 4 4 0 014-4z" /><path d="M12 18v3" /></> },
+  { href: "/watchlist", label: "Set price alerts", sub: "Email when hit",
+    icon: <><path d="M18 8a6 6 0 00-12 0c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.7 21a2 2 0 01-3.4 0" /></> },
+  { href: "/performance", label: "See your results", sub: "P&L vs S&P 500",
+    icon: <><path d="M3 3v18h18" /><path d="M7 14l4-4 3 3 5-6" /></> },
+  { href: "/screener", label: "Find stocks", sub: "Ranked by signal",
+    icon: <><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" /></> },
+  { href: "/backtest", label: "Test a strategy", sub: "On past data",
+    icon: <><path d="M3 12a9 9 0 109-9" /><path d="M3 4v5h5" /></> },
+  { href: "/track-record", label: "Live track record", sub: "Strategy vs market",
+    icon: <><path d="M8 21h8" /><path d="M12 17v4" /><path d="M5 4h14v5a7 7 0 01-14 0z" /></> },
+];
+
 const NAV_ICON_PROPS = {
   viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 1.75,
   strokeLinecap: "round" as const, strokeLinejoin: "round" as const,
@@ -57,6 +78,7 @@ export default function OverviewPage() {
   const [seedMsg, setSeedMsg] = useState("");
   const [autoBusy, setAutoBusy] = useState(false);
   const [autoRes, setAutoRes] = useState<any>(null);
+  const [showHelp, setShowHelp] = useState(false);
 
   async function loadPortfolio() {
     const j = await fetch("/api/portfolio").then(r => r.json());
@@ -164,53 +186,97 @@ export default function OverviewPage() {
     </div>
   ) : null;
 
-  /* ── Quick Tools bar (shows for all users) ── */
+  /* ── Quick Tools bar — clear hierarchy: 1 primary, 1 secondary, quiet utilities ── */
   const QuickTools = (
-    <div className="flex flex-wrap gap-2 mb-7">
-      <button onClick={runAlerts} disabled={alertBusy}
-              className="btn-ghost text-[12px] disabled:opacity-50 inline-flex items-center gap-2">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75"
-             strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
-          <path d="M21 12a9 9 0 11-9-9c2.5 0 4.7 1 6.4 2.6L21 3" />
-          <polyline points="21 3 21 9 15 9" />
-        </svg>
-        {alertBusy ? "Checking…" : "Run Alert Check"}
-      </button>
-      <button onClick={seedDemo} disabled={seedBusy}
-              className="btn-ghost text-[12px] disabled:opacity-50 inline-flex items-center gap-2">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75"
-             strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
-          <path d="M12 22V12" />
-          <path d="M5 12c0-4 3-7 7-7s7 3 7 7" />
-          <path d="M9 16l3 3 3-3" />
-        </svg>
-        {seedBusy ? "Seeding…" : "Seed Demo Portfolio"}
-      </button>
-      <a href="/suggestions" className="btn-mint text-[12px] inline-flex items-center gap-2">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75"
-             strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
-          <path d="M9 11l3 3L22 4" />
-          <path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11" />
-        </svg>
-        Recommended Trades
-      </a>
-      <a href="/settings" className="btn-ghost text-[12px] inline-flex items-center gap-2">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75"
-             strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
-          <circle cx="12" cy="12" r="3" />
-          <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09a1.65 1.65 0 00-1-1.51 1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09a1.65 1.65 0 001.51-1 1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z" />
-        </svg>
-        Settings
-      </a>
-      <button onClick={runAutoCycle} disabled={autoBusy}
-              className="btn-mint text-[12px] disabled:opacity-50 inline-flex items-center gap-2">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75"
-             strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
-          <rect x="4" y="4" width="16" height="16" rx="2" />
-          <rect x="9" y="9" width="6" height="6" />
-        </svg>
-        {autoBusy ? "Scanning universe…" : "Run Auto-Trade Cycle"}
-      </button>
+    <div className="mb-7">
+      {/* Primary + secondary actions — stack full-width on mobile, row on desktop */}
+      <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-stretch gap-2.5 sm:gap-3">
+        {/* PRIMARY — the safe everyday action */}
+        <a href="/suggestions"
+           className="btn-mint text-[13px] flex flex-col items-start gap-0.5 !py-2.5 !px-4 w-full sm:w-auto">
+          <span className="inline-flex items-center gap-2 font-semibold">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9"
+                 strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 shrink-0">
+              <path d="M9 11l3 3L22 4" /><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11" />
+            </svg>
+            Recommended Trades
+          </span>
+          <span className="text-[10.5px] font-normal opacity-80">Review &amp; approve — you stay in control</span>
+        </a>
+
+        {/* SECONDARY — autonomous, emphasized but clearly distinct */}
+        <button onClick={runAutoCycle} disabled={autoBusy}
+                className="btn-ghost text-[13px] !border-mint/40 disabled:opacity-50 flex flex-col items-start gap-0.5 !py-2.5 !px-4 w-full sm:w-auto">
+          <span className="inline-flex items-center gap-2 font-semibold text-mint">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9"
+                 strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 shrink-0">
+              <rect x="4" y="4" width="16" height="16" rx="2" /><rect x="9" y="9" width="6" height="6" />
+            </svg>
+            {autoBusy ? "Scanning universe…" : "Run Auto-Trade Cycle"}
+          </span>
+          <span className="text-[10.5px] font-normal text-muted">Let the bot buy &amp; sell automatically</span>
+        </button>
+
+        {/* Help toggle — full-width on mobile, pushed right on desktop */}
+        <button onClick={() => setShowHelp(v => !v)}
+                className="btn-ghost text-[12px] inline-flex items-center justify-center gap-2 w-full sm:w-auto sm:ml-auto sm:self-start">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75"
+               strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5 shrink-0">
+            <circle cx="12" cy="12" r="10" /><path d="M9.1 9a3 3 0 015.8 1c0 2-3 3-3 3" /><path d="M12 17h.01" />
+          </svg>
+          {showHelp ? "Hide guide" : "How it works"}
+        </button>
+      </div>
+
+      {/* Quiet utility row */}
+      <div className="flex flex-wrap gap-2 mt-2.5">
+        <button onClick={runAlerts} disabled={alertBusy}
+                className="btn-ghost text-[11.5px] !py-1.5 disabled:opacity-50 inline-flex items-center gap-1.5 text-muted">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" className="w-3 h-3">
+            <path d="M21 12a9 9 0 11-9-9c2.5 0 4.7 1 6.4 2.6L21 3" /><polyline points="21 3 21 9 15 9" />
+          </svg>
+          {alertBusy ? "Checking…" : "Check Alerts"}
+        </button>
+        <button onClick={seedDemo} disabled={seedBusy}
+                className="btn-ghost text-[11.5px] !py-1.5 disabled:opacity-50 inline-flex items-center gap-1.5 text-muted">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" className="w-3 h-3">
+            <path d="M12 22V12" /><path d="M5 12c0-4 3-7 7-7s7 3 7 7" /><path d="M9 16l3 3 3-3" />
+          </svg>
+          {seedBusy ? "Seeding…" : "Seed Demo"}
+        </button>
+        <a href="/settings" className="btn-ghost text-[11.5px] !py-1.5 inline-flex items-center gap-1.5 text-muted">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" className="w-3 h-3">
+            <circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09a1.65 1.65 0 00-1-1.51 1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09a1.65 1.65 0 001.51-1 1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z" />
+          </svg>
+          Settings
+        </a>
+      </div>
+
+      {/* Quick-start: minimalist line-icon tiles, short labels + redirects */}
+      {showHelp && (
+        <div className="panel mt-3 p-4">
+          <div className="flex items-center justify-between mb-3.5">
+            <div className="section-h !mb-0">Quick start</div>
+            <button onClick={() => setShowHelp(false)} className="text-muted hover:text-ink text-[11px]">Dismiss</button>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+            {QUICK_CARDS.map(c => (
+              <a key={c.label} href={c.href}
+                 className="group rounded-xl border border-border1 px-3.5 py-3.5 flex flex-col cursor-pointer
+                            transition-all hover:border-mint/60 hover:bg-mint/[0.04]">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"
+                     strokeLinecap="round" strokeLinejoin="round"
+                     className="w-5 h-5 text-mint">
+                  {c.icon}
+                </svg>
+                <span className="text-[12.5px] font-semibold text-ink mt-3 group-hover:text-mint transition-colors">{c.label}</span>
+                <span className="text-[10.5px] text-muted mt-0.5">{c.sub}</span>
+              </a>
+            ))}
+          </div>
+          <div className="text-[10.5px] text-muted mt-3.5">Paper trading — no real money at risk. New? Tap <b className="text-ink2">Seed Demo</b> to start.</div>
+        </div>
+      )}
     </div>
   );
 
@@ -346,7 +412,7 @@ export default function OverviewPage() {
       {AlertBanner}
       {QuickTools}
 
-      <div className="flex flex-wrap gap-3 mb-7">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-7">
         <Kpi label="Total Value" value={fp(totalVal + cash)}
              sub={`${fp(totalVal)} invested`} color={portfolioPnl >= 0 ? "mint" : "red"} />
         <Kpi label="Portfolio P&L" value={fpp(portfolioPnl)}

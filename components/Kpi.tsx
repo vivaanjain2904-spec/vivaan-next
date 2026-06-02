@@ -4,7 +4,7 @@ export function Kpi({ label, value, sub, color }: {
 }) {
   const c = color === "mint" ? "text-mint" : color === "red" ? "text-red" : "text-ink";
   return (
-    <div className="panel flex-1 min-w-[160px] relative overflow-hidden group">
+    <div className="panel w-full relative overflow-hidden group">
       {/* Subtle accent bar that catches the eye but doesn't shout */}
       <span
         className={[

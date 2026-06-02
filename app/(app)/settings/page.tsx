@@ -166,7 +166,7 @@ export default function SettingsPage() {
         </div>
         {notifyRes && <NotifyResultInline res={notifyRes} />}
 
-        <label className="flex items-center gap-2 mt-5 text-sm cursor-pointer">
+        <label id="ml-signals" className="flex items-center gap-2 mt-5 text-sm cursor-pointer scroll-mt-20">
           <input type="checkbox" checked={mlOn} onChange={e => setMlOn(e.target.checked)}
                  className="accent-mint" />
           <span>Enable ML sell-signal alerts</span>
@@ -246,7 +246,7 @@ export default function SettingsPage() {
       </div>
 
       {/* ── Fully Autonomous Mode ── */}
-      <div className="section-h">Fully Autonomous Mode</div>
+      <div id="auto-trader" className="section-h scroll-mt-20">Fully Autonomous Mode</div>
       <div className="panel mb-6">
         <div className="rounded-lg p-3 bg-amber/10 border border-amber/30 text-[12px] text-amber mb-4">
           <b>Heads up:</b> Autonomous mode lets Vaelor scan the 540+ stock universe and
