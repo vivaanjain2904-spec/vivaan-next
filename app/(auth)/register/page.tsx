@@ -7,6 +7,7 @@ import Logo from "@/components/Logo";
 export default function RegisterPage() {
   const router = useRouter();
   const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
   const [pw,  setPw]    = useState("");
   const [pw2, setPw2]   = useState("");
   const [cash, setCash] = useState(100000);
@@ -15,11 +16,12 @@ export default function RegisterPage() {
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) { setErr("Enter a valid email"); return; }
     if (pw !== pw2) { setErr("Passwords don't match"); return; }
     setErr(""); setBusy(true);
     const r = await fetch("/api/auth/register", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, password: pw, starting_cash: cash }),
+      body: JSON.stringify({ name, email, password: pw, starting_cash: cash }),
     });
     setBusy(false);
     if (r.ok) router.push("/overview");
@@ -44,6 +46,16 @@ export default function RegisterPage() {
                 className="auth-input"
                 value={name}
                 onChange={e => setName(e.target.value)}
+                required
+              />
+            </Field>
+            <Field label="Email">
+              <input
+                type="email"
+                autoComplete="email"
+                className="auth-input"
+                value={email}
+                onChange={e => setEmail(e.target.value)}
                 required
               />
             </Field>
