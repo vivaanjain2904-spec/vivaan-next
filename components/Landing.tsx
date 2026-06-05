@@ -7,10 +7,10 @@ import Logo from "@/components/Logo";
      - /welcome   (app/welcome/page.tsx, viewable anytime)
    No external assets; uses inline CSS-mocked dashboard preview.
    ──────────────────────────────────────────────────────────── */
-export default function Landing() {
+export default function Landing({ loggedIn = false }: { loggedIn?: boolean }) {
   return (
     <div className="min-h-screen bg-bg text-ink">
-      <NavBar />
+      <NavBar loggedIn={loggedIn} />
       <Hero />
       <TrackRecordStrip />
       <FeaturesSection />
@@ -22,7 +22,7 @@ export default function Landing() {
   );
 }
 
-function NavBar() {
+function NavBar({ loggedIn = false }: { loggedIn?: boolean }) {
   return (
     <header className="border-b border-border1/50 sticky top-0 z-40 bg-bg/85 backdrop-blur-md">
       <div className="max-w-7xl mx-auto px-5 sm:px-8 h-16 flex items-center justify-between">
@@ -40,12 +40,20 @@ function NavBar() {
           <Link href="/founder" className="hidden sm:inline text-[13px] text-ink2 hover:text-ink transition-colors px-3 py-2">
             Founder
           </Link>
-          <Link href="/login" className="text-[13px] text-ink2 hover:text-ink transition-colors px-3 py-2">
-            Sign in
-          </Link>
-          <Link href="/register" className="btn-mint text-[13px] !py-2">
-            Get started
-          </Link>
+          {loggedIn ? (
+            <Link href="/overview" className="btn-mint text-[13px] !py-2">
+              Go to Dashboard
+            </Link>
+          ) : (
+            <>
+              <Link href="/login" className="text-[13px] text-ink2 hover:text-ink transition-colors px-3 py-2">
+                Sign in
+              </Link>
+              <Link href="/register" className="btn-mint text-[13px] !py-2">
+                Get started
+              </Link>
+            </>
+          )}
         </nav>
       </div>
     </header>
