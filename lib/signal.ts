@@ -257,12 +257,12 @@ export function computeMarketRegime(candles: Candle[]): "bull" | "bear" | "neutr
  *   otherwise → keep current
  */
 export function computeTrailingStop(currentSL: number, pnlFrac: number): number {
-  let target = currentSL;
-  if (pnlFrac >= 0.50)      target = Math.min(target, -0.30);
-  else if (pnlFrac >= 0.35) target = Math.min(target, -0.15);
-  else if (pnlFrac >= 0.20) target = Math.min(target, -0.05);
-  else if (pnlFrac >= 0.10) target = Math.min(target, 0);
-  return target;
+  if (pnlFrac <= 0) return currentSL;
+  // Continuous ratchet: lock in (pnlFrac - 1×ATR-equivalent buffer)
+  // Buffer = 10% of the gain, floored at 5% nominal stop
+  const lockIn = pnlFrac - Math.max(pnlFrac * 0.10, 0.05);
+  const target = -lockIn; // negative = profit-lock (fires above cost)
+  return Math.min(currentSL, target);
 }
 
 /**
