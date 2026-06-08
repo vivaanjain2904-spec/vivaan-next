@@ -8,14 +8,43 @@ import { alpacaBuy } from "@/lib/alpaca";
 export const maxDuration = 60;
 
 const POOL = [
+  // Mega tech
   "AAPL","MSFT","NVDA","GOOGL","AMZN","META","TSLA","AVGO","ORCL","ADBE","CRM","NFLX","AMD","INTC","QCOM",
-  "ASML","TSM","MU","AMAT","LRCX","ARM","ANET",
-  "JPM","BAC","WFC","GS","MS","BLK","V","MA","PYPL","SCHW","C","COF","AXP","SPGI",
-  "JNJ","UNH","LLY","ABBV","MRK","PFE","TMO","ABT",
-  "WMT","COST","HD","NKE","SBUX","MCD","DIS","CMCSA","KO","PEP","PG",
-  "XOM","CVX","CAT","BA","GE","UPS","LMT","BX",
-  "SHOP","CRWD","SNOW","PLTR","COIN","UBER","ABNB","NOW","INTU","SPOT","DDOG","NET",
+  // Semis & infra
+  "ASML","TSM","MU","AMAT","LRCX","ARM","ANET","MRVL","KLAC","SNPS","CDNS",
+  // Finance
+  "JPM","BAC","WFC","GS","MS","BLK","V","MA","PYPL","SCHW","C","COF","AXP","SPGI","ICE","CME","MCO","PGR","TRV",
+  // Healthcare
+  "JNJ","UNH","LLY","ABBV","MRK","PFE","TMO","ABT","ISRG","BSX","EW","VRTX","REGN","GILD","BMY","CVS","CI","HUM",
+  // Consumer discretionary
+  "WMT","COST","HD","NKE","SBUX","MCD","DIS","CMCSA","KO","PEP","PG","LOW","TGT","AMZN","BKNG","MAR","HLT","YUM",
+  // Energy & industrial
+  "XOM","CVX","CAT","BA","GE","UPS","LMT","BX","RTX","HON","MMM","EMR","ETN","SLB","OXY","COP","EOG",
+  // Growth / tech
+  "SHOP","CRWD","SNOW","PLTR","COIN","UBER","ABNB","NOW","INTU","SPOT","DDOG","NET","ZS","PANW","MDB","GTLB","HUBS","TTD","BILL","IOT",
+  // Mid-cap growth
+  "CELH","DUOL","APP","RBLX","U","RIVN","LCID","SOFI","HOOD","AFRM","UPST","SQ","TWLO","OKTA","ZM","DOCU","FIVN","APPN",
 ];
+
+const SECTOR: Record<string, string> = {
+  // Tech
+  AAPL:"tech",MSFT:"tech",NVDA:"tech",GOOGL:"tech",AMZN:"tech",META:"tech",TSLA:"tech",
+  AVGO:"tech",ORCL:"tech",ADBE:"tech",CRM:"tech",NFLX:"tech",AMD:"tech",INTC:"tech",QCOM:"tech",
+  ASML:"semis",TSM:"semis",MU:"semis",AMAT:"semis",LRCX:"semis",ARM:"semis",ANET:"tech",
+  // Finance
+  JPM:"finance",BAC:"finance",WFC:"finance",GS:"finance",MS:"finance",BLK:"finance",
+  V:"finance",MA:"finance",PYPL:"finance",SCHW:"finance",C:"finance",COF:"finance",AXP:"finance",SPGI:"finance",
+  // Healthcare
+  JNJ:"health",UNH:"health",LLY:"health",ABBV:"health",MRK:"health",PFE:"health",TMO:"health",ABT:"health",
+  // Consumer
+  WMT:"consumer",COST:"consumer",HD:"consumer",NKE:"consumer",SBUX:"consumer",MCD:"consumer",
+  DIS:"consumer",CMCSA:"consumer",KO:"consumer",PEP:"consumer",PG:"consumer",
+  // Energy/Industrial
+  XOM:"energy",CVX:"energy",CAT:"industrial",BA:"industrial",GE:"industrial",UPS:"industrial",LMT:"industrial",BX:"finance",
+  // Growth
+  SHOP:"tech",CRWD:"tech",SNOW:"tech",PLTR:"tech",COIN:"crypto",UBER:"tech",ABNB:"consumer",
+  NOW:"tech",INTU:"tech",SPOT:"tech",DDOG:"tech",NET:"tech",
+};
 
 const FETCH_TIMEOUT_MS = 4500;
 function withTimeout<T>(p: Promise<T>, ms: number): Promise<T | null> {
@@ -135,7 +164,7 @@ async function runForUser(user: any): Promise<any> {
     if (sig.dropProb > 0.55) return null;
     const smart = computeSmartStops(candles) ?? undefined;
     const daysToER = await withTimeout(daysUntilEarnings(c.ticker), 2000);
-    if (daysToER != null && daysToER >= 0 && daysToER <= 3) return null;
+    if (daysToER != null && daysToER >= 0 && daysToER <= 14) return null;
     return { ticker: c.ticker, price: c.q.price, dropProb: sig.dropProb, smart };
   }));
   for (const r of results) {
@@ -150,10 +179,14 @@ async function runForUser(user: any): Promise<any> {
 
   const orders: any[] = [];
   let remainingCash = cashAvailable;
+  const boughtSectors = new Set<string>();
 
   for (let i = 0; i < buyTarget; i++) {
     const pick = scored[i];
     if (remainingCash < pick.price * 1.01) break;
+
+    const sector = SECTOR[pick.ticker] ?? pick.ticker;
+    if (boughtSectors.has(sector)) continue;
 
     const baseBudget = (Number(user.auto_buy_size) || 500) * sizingMultiplier(pick.dropProb);
     const maxBudgetForCap = totalEquity * maxPosPct;
@@ -183,6 +216,8 @@ async function runForUser(user: any): Promise<any> {
         VALUES (${user.id}, ${pick.ticker}, 'BUY', ${qty}, ${pick.price})`;
       remainingCash -= cost;
     } catch { continue; }
+
+    boughtSectors.add(sector);
 
     orders.push({ ticker: pick.ticker, qty, price: pick.price, dropProb: pick.dropProb,
                   mode: alpacaOrderId ? "alpaca" : "paper", orderId: alpacaOrderId });

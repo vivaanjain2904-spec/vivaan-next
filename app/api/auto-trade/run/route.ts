@@ -9,6 +9,21 @@ import { alpacaBuy, alpacaSell } from "@/lib/alpaca";
 
 export const maxDuration = 60;
 
+function pearsonCorr(a: number[], b: number[]): number {
+  const n = Math.min(a.length, b.length);
+  if (n < 5) return 0;
+  const ax = a.slice(-n), bx = b.slice(-n);
+  const ma = ax.reduce((s, v) => s + v, 0) / n;
+  const mb = bx.reduce((s, v) => s + v, 0) / n;
+  let num = 0, da = 0, db = 0;
+  for (let i = 0; i < n; i++) {
+    num += (ax[i] - ma) * (bx[i] - mb);
+    da  += (ax[i] - ma) ** 2;
+    db  += (bx[i] - mb) ** 2;
+  }
+  return da && db ? num / Math.sqrt(da * db) : 0;
+}
+
 /* Curated pool of ~60 liquid mega/large-caps. Yahoo Finance rate-limits the
    full 540+ universe under load, but reliably handles ~60. Covers the names
    that actually drive the market anyway. */
@@ -16,18 +31,40 @@ const POOL = [
   // Mega tech
   "AAPL","MSFT","NVDA","GOOGL","AMZN","META","TSLA","AVGO","ORCL","ADBE","CRM","NFLX","AMD","INTC","QCOM",
   // Semis & infra
-  "ASML","TSM","MU","AMAT","LRCX","ARM","ANET",
+  "ASML","TSM","MU","AMAT","LRCX","ARM","ANET","MRVL","KLAC","SNPS","CDNS",
   // Finance
-  "JPM","BAC","WFC","GS","MS","BLK","V","MA","PYPL","SCHW","C","COF","AXP","SPGI",
+  "JPM","BAC","WFC","GS","MS","BLK","V","MA","PYPL","SCHW","C","COF","AXP","SPGI","ICE","CME","MCO","PGR","TRV",
   // Healthcare
-  "JNJ","UNH","LLY","ABBV","MRK","PFE","TMO","ABT",
-  // Consumer / staples
-  "WMT","COST","HD","NKE","SBUX","MCD","DIS","CMCSA","KO","PEP","PG",
-  // Energy / industrial
-  "XOM","CVX","CAT","BA","GE","UPS","LMT","BX",
-  // Growth/tech
-  "SHOP","CRWD","SNOW","PLTR","COIN","UBER","ABNB","NOW","INTU","SPOT","DDOG","NET",
+  "JNJ","UNH","LLY","ABBV","MRK","PFE","TMO","ABT","ISRG","BSX","EW","VRTX","REGN","GILD","BMY","CVS","CI","HUM",
+  // Consumer discretionary
+  "WMT","COST","HD","NKE","SBUX","MCD","DIS","CMCSA","KO","PEP","PG","LOW","TGT","AMZN","BKNG","MAR","HLT","YUM",
+  // Energy & industrial
+  "XOM","CVX","CAT","BA","GE","UPS","LMT","BX","RTX","HON","MMM","EMR","ETN","SLB","OXY","COP","EOG",
+  // Growth / tech
+  "SHOP","CRWD","SNOW","PLTR","COIN","UBER","ABNB","NOW","INTU","SPOT","DDOG","NET","ZS","PANW","MDB","GTLB","HUBS","TTD","BILL","IOT",
+  // Mid-cap growth
+  "CELH","DUOL","APP","RBLX","U","RIVN","LCID","SOFI","HOOD","AFRM","UPST","SQ","TWLO","OKTA","ZM","DOCU","FIVN","APPN",
 ];
+
+const SECTOR: Record<string, string> = {
+  // Tech
+  AAPL:"tech",MSFT:"tech",NVDA:"tech",GOOGL:"tech",AMZN:"tech",META:"tech",TSLA:"tech",
+  AVGO:"tech",ORCL:"tech",ADBE:"tech",CRM:"tech",NFLX:"tech",AMD:"tech",INTC:"tech",QCOM:"tech",
+  ASML:"semis",TSM:"semis",MU:"semis",AMAT:"semis",LRCX:"semis",ARM:"semis",ANET:"tech",
+  // Finance
+  JPM:"finance",BAC:"finance",WFC:"finance",GS:"finance",MS:"finance",BLK:"finance",
+  V:"finance",MA:"finance",PYPL:"finance",SCHW:"finance",C:"finance",COF:"finance",AXP:"finance",SPGI:"finance",
+  // Healthcare
+  JNJ:"health",UNH:"health",LLY:"health",ABBV:"health",MRK:"health",PFE:"health",TMO:"health",ABT:"health",
+  // Consumer
+  WMT:"consumer",COST:"consumer",HD:"consumer",NKE:"consumer",SBUX:"consumer",MCD:"consumer",
+  DIS:"consumer",CMCSA:"consumer",KO:"consumer",PEP:"consumer",PG:"consumer",
+  // Energy/Industrial
+  XOM:"energy",CVX:"energy",CAT:"industrial",BA:"industrial",GE:"industrial",UPS:"industrial",LMT:"industrial",BX:"finance",
+  // Growth
+  SHOP:"tech",CRWD:"tech",SNOW:"tech",PLTR:"tech",COIN:"crypto",UBER:"tech",ABNB:"consumer",
+  NOW:"tech",INTU:"tech",SPOT:"tech",DDOG:"tech",NET:"tech",
+};
 
 const FETCH_TIMEOUT_MS = 4500;
 
@@ -160,6 +197,12 @@ export async function POST() {
         if (dp != null && dp >= mlThreshold) mlHit = true;
       } catch {}
 
+      // Time-based exit: trim 25% if position has been sideways for 90+ days
+      let timeHit = false;
+      const createdAt = p.created_at ? new Date(p.created_at).getTime() : null;
+      const ageInDays = createdAt ? (Date.now() - createdAt) / 86400_000 : 0;
+      if (ageInDays >= 90 && dp != null && dp >= 0.45) timeHit = true;
+
       // News-sentiment RISK OVERLAY (sell-side only, never a buy signal).
       // To bound API calls we only check news for BORDERLINE holdings — model
       // already moderately risky (dp >= 0.50) but not yet a hard ML sell, and
@@ -175,9 +218,11 @@ export async function POST() {
         } catch {}
       }
 
-      if (stopHit || tgtHit || mlHit || newsHit) {
-        const reason = stopHit ? "stop-loss" : tgtHit ? "take-profit" : mlHit ? "ml-signal" : "negative-news";
-        const qty = Number(p.qty);
+      if (stopHit || tgtHit || mlHit || newsHit || timeHit) {
+        const reason = stopHit ? "stop-loss" : tgtHit ? "take-profit" : mlHit ? "ml-signal" : timeHit ? "time-exit" : "negative-news";
+        const qty = timeHit && !stopHit && !tgtHit && !mlHit && !newsHit
+          ? Math.max(1, Math.floor(Number(p.qty) * 0.25))
+          : Number(p.qty);
         const proceeds = qty * px;
 
         // Alpaca leg
@@ -188,8 +233,14 @@ export async function POST() {
         }
 
         // Mirror paper
+        const isPartial = timeHit && !stopHit && !tgtHit && !mlHit && !newsHit;
         try {
-          await sql`DELETE FROM positions WHERE user_id=${user.id} AND ticker=${p.ticker}`;
+          if (isPartial) {
+            const newQty = Number(p.qty) - qty;
+            await sql`UPDATE positions SET qty=${newQty} WHERE user_id=${user.id} AND ticker=${p.ticker}`;
+          } else {
+            await sql`DELETE FROM positions WHERE user_id=${user.id} AND ticker=${p.ticker}`;
+          }
           await sql`UPDATE users SET cash = cash + ${proceeds} WHERE id=${user.id}`;
           await sql`INSERT INTO trades (user_id, ticker, side, qty, price)
             VALUES (${user.id}, ${p.ticker}, 'SELL', ${qty}, ${px})`;
@@ -202,6 +253,7 @@ export async function POST() {
         const title = stopHit ? `🔴 Auto-sold ${p.ticker} (stop)` :
                       tgtHit ? `🟢 Auto-sold ${p.ticker} (target)` :
                       mlHit  ? `⚠️ Auto-sold ${p.ticker} (ML)` :
+                      timeHit ? `⏱️ Auto-trimmed ${p.ticker} 25% (time-exit)` :
                                `📰 Auto-sold ${p.ticker} (negative news${newsScore != null ? ` ${newsScore.toFixed(2)}` : ""})`;
         const body = `${qty} shares @ $${px.toFixed(2)} · ${reason}` +
           (alpacaOrderId ? ` · Alpaca order ${alpacaOrderId}` : " · paper");
@@ -353,6 +405,7 @@ export async function POST() {
     const spy = await getChart("SPY", "6mo");
     regime = computeMarketRegime(spy);
   } catch {}
+  const regimeThreshold = regime === "bull" ? 0.35 : regime === "neutral" ? 0.28 : 0.20;
   if (regime === "bear") {
     return NextResponse.json({
       ok: true,
@@ -403,6 +456,7 @@ export async function POST() {
     ticker: string; price: number; dropProb: number;
     smart?: { stop_loss: number; take_profit: number };
     daysToER: number | null;
+    avgCorr?: number;
   };
   const scored: Scored[] = [];
 
@@ -420,7 +474,7 @@ export async function POST() {
       if (dropProb > 0.55) return null; // skip clearly bearish names
       const smart = computeSmartStops(candles) ?? undefined;
       const daysToER = await withTimeout(daysUntilEarnings(c.ticker), 2000);
-      if (daysToER != null && daysToER >= 0 && daysToER <= 3) return null;
+      if (daysToER != null && daysToER >= 0 && daysToER <= 14) return null;
       return {
         ticker: c.ticker, price: c.q.price, dropProb,
         smart, daysToER,
@@ -431,28 +485,46 @@ export async function POST() {
     if (r.status === "fulfilled" && r.value) scored.push(r.value);
   }
 
-  if (!scored.length) {
-    return NextResponse.json({
-      ok: true,
-      cycled: true,
-      scanned: quotedCandidates.length,
-      candidates: 0,
-      sells: sellOrders,
-      msg: `Sold ${sellOrders.length}. No high-conviction buys found in this cycle.`,
+  // ── Rank by strongest signal (lowest dropProb) and buy top N ──
+  scored.sort((a, b) => a.dropProb - b.dropProb);
+  const qualified = scored.filter(s => s.dropProb <= regimeThreshold);
+
+  // Re-rank by correlation-adjusted score: prefer low correlation to current holdings
+  if (positions.length > 0) {
+    // Get closes for top held positions (up to 3)
+    const topHeld = positions.slice(0, 3);
+    const heldCandles = await Promise.all(
+      topHeld.map(p => getChart(p.ticker, "3mo").catch(() => [] as any[]))
+    );
+    const heldCloses = heldCandles.map(c => c.map((x: any) => x.c));
+
+    for (const s of qualified) {
+      const candles = await getChart(s.ticker, "3mo").catch(() => [] as any[]);
+      const closes = candles.map((x: any) => x.c);
+      const corrs = heldCloses.map(hc => Math.abs(pearsonCorr(closes, hc)));
+      s.avgCorr = corrs.length ? corrs.reduce((a, b) => a + b, 0) / corrs.length : 0;
+    }
+    // Combined rank: 70% signal, 30% diversification
+    qualified.sort((a, b) => {
+      const scoreA = a.dropProb * 0.7 + (a.avgCorr ?? 0) * 0.3;
+      const scoreB = b.dropProb * 0.7 + (b.avgCorr ?? 0) * 0.3;
+      return scoreA - scoreB;
     });
   }
 
-  // ── Rank by strongest signal (lowest dropProb) and buy top N ──
-  scored.sort((a, b) => a.dropProb - b.dropProb);
   const slotsAvailable = Math.max(0, maxPositions - openCount);
-  const buyTarget = Math.min(slotsAvailable, MAX_NEW_BUYS_PER_CYCLE, scored.length);
+  const buyTarget = Math.min(slotsAvailable, MAX_NEW_BUYS_PER_CYCLE, qualified.length);
 
   const orders: any[] = [];
   let remainingCash = cashAvailable;
+  const boughtSectors = new Set<string>();
 
   for (let i = 0; i < buyTarget; i++) {
-    const pick = scored[i];
+    const pick = qualified[i];
     if (remainingCash < pick.price * 1.01) break;
+
+    const sector = SECTOR[pick.ticker] ?? pick.ticker;
+    if (boughtSectors.has(sector)) continue;
 
     // Position size: conviction-multiplied base, capped by max_pos_pct of total equity
     const baseBudget = (Number(user.auto_buy_size) || 500) * sizingMultiplier(pick.dropProb);
@@ -490,6 +562,8 @@ export async function POST() {
       continue;
     }
 
+    boughtSectors.add(sector);
+
     orders.push({
       ticker: pick.ticker, ok: true, qty, price: pick.price,
       cost, dropProb: pick.dropProb,
@@ -511,7 +585,7 @@ export async function POST() {
     ok: true,
     cycled: true,
     scanned: quotedCandidates.length,
-    candidates: scored.length,
+    candidates: qualified.length,
     bought: boughtCount,
     sold: sellOrders.length,
     regime,
@@ -529,7 +603,7 @@ export async function POST() {
     msg: [
       coreNote,
       sellOrders.length > 0 ? `Sold ${sellOrders.length}` : null,
-      boughtCount > 0 ? `Bought ${boughtCount}` : (scored.length ? `${scored.length} candidates didn't fit sizing rules` : null),
+      boughtCount > 0 ? `Bought ${boughtCount}` : (qualified.length ? `${qualified.length} candidates didn't fit sizing rules` : null),
     ].filter(Boolean).join(" · ") || "No actions this cycle.",
   });
   } catch (e: any) {
