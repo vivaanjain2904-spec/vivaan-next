@@ -18,7 +18,7 @@ export const maxDuration = 60;
  */
 export async function GET(req: Request) {
   const auth = req.headers.get("authorization") || "";
-  if (process.env.CRON_SECRET && auth !== `Bearer ${process.env.CRON_SECRET}`) {
+  if (!process.env.CRON_SECRET || auth !== `Bearer ${process.env.CRON_SECRET}`) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
@@ -85,24 +85,35 @@ export async function GET(req: Request) {
   async function tryAutoSell(user: any, ticker: string, qty: number, price: number, reason: string) {
     if (!user.auto_trade) return null;
 
+    let filledQty = qty; // paper: assume full fill
     let alpacaOrderId: string | undefined, alpacaErr: string | undefined;
     if (user.alpaca_key && user.alpaca_secret) {
       const r = await alpacaSell(
         { key: user.alpaca_key, secret: user.alpaca_secret }, ticker, qty);
-      if (r.ok) alpacaOrderId = r.orderId; else alpacaErr = r.error;
+      if (r.ok) {
+        alpacaOrderId = r.orderId;
+        if (r.filledQty && r.filledQty < qty) filledQty = r.filledQty;
+      } else {
+        alpacaErr = r.error;
+      }
     }
 
-    // Always mirror the sell in our local DB
+    // Mirror the sell in the local DB using the actual filled qty
     try {
-      await sql`DELETE FROM positions WHERE user_id=${user.id} AND ticker=${ticker}`;
-      await sql`UPDATE users SET cash = cash + ${qty * price} WHERE id=${user.id}`;
+      const remaining = qty - filledQty;
+      if (remaining > 0.0001) {
+        await sql`UPDATE positions SET qty=${remaining} WHERE user_id=${user.id} AND ticker=${ticker}`;
+      } else {
+        await sql`DELETE FROM positions WHERE user_id=${user.id} AND ticker=${ticker}`;
+      }
+      await sql`UPDATE users SET cash = cash + ${filledQty * price} WHERE id=${user.id}`;
       await sql`INSERT INTO trades (user_id, ticker, side, qty, price)
-        VALUES (${user.id}, ${ticker}, 'SELL', ${qty}, ${price})`;
+        VALUES (${user.id}, ${ticker}, 'SELL', ${filledQty}, ${price})`;
     } catch {}
 
-    if (alpacaOrderId) return `🤖 Auto-sold ${qty} ${ticker} via Alpaca (${reason}). Order ${alpacaOrderId}`;
-    if (alpacaErr)     return `🤖 Paper auto-sold ${qty} ${ticker} (${reason}). Alpaca failed: ${alpacaErr}`;
-    return `🤖 Paper auto-sold ${qty} ${ticker} (${reason})`;
+    if (alpacaOrderId) return `🤖 Auto-sold ${filledQty} ${ticker} via Alpaca (${reason}). Order ${alpacaOrderId}`;
+    if (alpacaErr)     return `🤖 Paper auto-sold ${filledQty} ${ticker} (${reason}). Alpaca failed: ${alpacaErr}`;
+    return `🤖 Paper auto-sold ${filledQty} ${ticker} (${reason})`;
   }
 
   // Market regime — fetch SPY once for all users in this run
@@ -241,7 +252,9 @@ export async function GET(req: Request) {
         try {
           await sql`INSERT INTO positions (user_id, ticker, qty, avg_cost, stop_loss, take_profit)
             VALUES (${user.id}, ${w.ticker}, ${qty}, ${q.price}, 0.05, 0.10)
-            ON CONFLICT (user_id, ticker) DO NOTHING`;
+            ON CONFLICT (user_id, ticker) DO UPDATE SET
+              qty = positions.qty + ${qty},
+              avg_cost = (positions.qty * positions.avg_cost + ${cost}) / (positions.qty + ${qty})`;
           await sql`UPDATE users SET cash = cash - ${cost} WHERE id=${user.id}`;
           await sql`INSERT INTO trades (user_id, ticker, side, qty, price)
             VALUES (${user.id}, ${w.ticker}, 'BUY', ${qty}, ${q.price})`;

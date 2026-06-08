@@ -41,7 +41,7 @@ async function rebalanceUser(user: any, target: any) {
     const px = quotes[p.ticker]?.price;
     if (px) posVal += Number(p.qty) * px;
   }
-  const equity = cash + posVal;
+  let equity = cash + posVal;
   if (equity <= 0) return { user: user.name, error: "no equity" };
 
   const held: Record<string, { qty: number; avg: number }> = {};
@@ -81,6 +81,14 @@ async function rebalanceUser(user: any, target: any) {
     trades.push({ ticker: p.ticker, side: "SELL", qty, price: fillPx, reason: "not-in-target" });
    } catch (e: any) { trades.push({ ticker: p.ticker, side: "SELL", qty: 0, price: 0, reason: "not-in-target", skipped: `error: ${String(e?.message ?? e).slice(0,80)}` }); }
   }
+
+  // Recompute equity after sells so buy sizing uses up-to-date capital
+  let updatedPosVal = 0;
+  for (const tk in held) {
+    const px = quotes[tk]?.price;
+    if (px) updatedPosVal += held[tk].qty * px;
+  }
+  equity = cash + updatedPosVal;
 
   // 2) Rebalance each target name to weight × equity
   for (const tk of tgtTickers) {

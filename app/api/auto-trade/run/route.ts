@@ -478,7 +478,9 @@ export async function POST() {
     try {
       await sql`INSERT INTO positions (user_id, ticker, qty, avg_cost, stop_loss, take_profit)
         VALUES (${user.id}, ${pick.ticker}, ${qty}, ${pick.price}, ${sl}, ${tp})
-        ON CONFLICT (user_id, ticker) DO NOTHING`;
+        ON CONFLICT (user_id, ticker) DO UPDATE SET
+          qty = positions.qty + ${qty},
+          avg_cost = (positions.qty * positions.avg_cost + ${cost}) / (positions.qty + ${qty})`;
       await sql`UPDATE users SET cash = cash - ${cost} WHERE id=${user.id}`;
       await sql`INSERT INTO trades (user_id, ticker, side, qty, price)
         VALUES (${user.id}, ${pick.ticker}, 'BUY', ${qty}, ${pick.price})`;

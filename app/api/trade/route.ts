@@ -81,12 +81,22 @@ export async function POST(req: Request) {
   return NextResponse.json({ ok: true, msg: `Sold ${q} ${tk} @ $${price.toFixed(2)}` });
 }
 
-/** PATCH /api/trade { ticker, stop_loss, take_profit } */
+/** PATCH /api/trade { ticker, stop_loss?, take_profit? } */
 export async function PATCH(req: Request) {
   const s = await requireSession();
   const { ticker, stop_loss, take_profit } = await req.json();
-  await sql`UPDATE positions SET stop_loss=${Number(stop_loss)}, take_profit=${Number(take_profit)}
-    WHERE user_id=${s.uid} AND ticker=${String(ticker).toUpperCase()}`;
+  const tk = String(ticker || "").trim().toUpperCase();
+  if (!tk) return NextResponse.json({ error: "ticker required" }, { status: 400 });
+  if (stop_loss == null && take_profit == null) return NextResponse.json({ ok: true });
+  const sl = stop_loss  != null ? Number(stop_loss)  : undefined;
+  const tp = take_profit != null ? Number(take_profit) : undefined;
+  if (sl !== undefined && tp !== undefined) {
+    await sql`UPDATE positions SET stop_loss=${sl}, take_profit=${tp} WHERE user_id=${s.uid} AND ticker=${tk}`;
+  } else if (sl !== undefined) {
+    await sql`UPDATE positions SET stop_loss=${sl} WHERE user_id=${s.uid} AND ticker=${tk}`;
+  } else {
+    await sql`UPDATE positions SET take_profit=${tp!} WHERE user_id=${s.uid} AND ticker=${tk}`;
+  }
   return NextResponse.json({ ok: true });
 }
 

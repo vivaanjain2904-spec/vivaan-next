@@ -75,7 +75,7 @@ function computeMACD(closes: number[]): { macd: number; signal: number; hist: nu
   const ema12 = emaSeries(closes, 12);
   const ema26 = emaSeries(closes, 26);
   const macdSeries = ema12.map((v, i) => v - ema26[i]);
-  const signalSeries = emaSeries(macdSeries.slice(-9), 9);
+  const signalSeries = emaSeries(macdSeries, 9);
   const macd = macdSeries[macdSeries.length - 1];
   const signal = signalSeries[signalSeries.length - 1];
   const hist = macd - signal;

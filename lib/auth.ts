@@ -3,6 +3,9 @@ import { SignJWT, jwtVerify } from "jose";
 import bcrypt from "bcryptjs";
 import { sql } from "./db";
 
+if (!process.env.JWT_SECRET && process.env.NODE_ENV === "production") {
+  console.error("[auth] CRITICAL: JWT_SECRET is not set — sessions use a hardcoded secret and are forgeable");
+}
 const SECRET = new TextEncoder().encode(
   process.env.JWT_SECRET ?? "dev-secret-change-me-please-please-please",
 );

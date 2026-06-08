@@ -1,16 +1,13 @@
 import { NextResponse } from "next/server";
 import { sql } from "@/lib/db";
-import { requireSession } from "@/lib/auth";
+import { requireAdmin } from "@/lib/auth";
 
 /**
- * Stats dashboard — only the default "Vivaan" admin account can see it.
+ * Stats dashboard — admin-only.
  * Returns user count, recent signups, trades volume, top-watched tickers.
  */
 export async function GET() {
-  const s = await requireSession();
-  if (s.name !== "Vivaan") {
-    return NextResponse.json({ error: "admin only" }, { status: 403 });
-  }
+  await requireAdmin();
 
   const [userCount, recentUsers, tradeCount, totalCash, totalWatchlist, topWatched] = await Promise.all([
     sql`SELECT COUNT(*)::int AS n FROM users`,
