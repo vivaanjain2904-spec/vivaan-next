@@ -44,7 +44,7 @@ const MAX_NEW_BUYS_PER_CYCLE = 3;
 
 export async function GET(req: Request) {
   const auth = req.headers.get("authorization") || "";
-  if (process.env.CRON_SECRET && auth !== `Bearer ${process.env.CRON_SECRET}`) {
+  if (!process.env.CRON_SECRET || auth !== `Bearer ${process.env.CRON_SECRET}`) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
@@ -175,7 +175,9 @@ async function runForUser(user: any): Promise<any> {
     try {
       await sql`INSERT INTO positions (user_id, ticker, qty, avg_cost, stop_loss, take_profit)
         VALUES (${user.id}, ${pick.ticker}, ${qty}, ${pick.price}, ${sl}, ${tp})
-        ON CONFLICT (user_id, ticker) DO NOTHING`;
+        ON CONFLICT (user_id, ticker) DO UPDATE SET
+          qty = positions.qty + ${qty},
+          avg_cost = (positions.qty * positions.avg_cost + ${cost}) / (positions.qty + ${qty})`;
       await sql`UPDATE users SET cash = cash - ${cost} WHERE id=${user.id}`;
       await sql`INSERT INTO trades (user_id, ticker, side, qty, price)
         VALUES (${user.id}, ${pick.ticker}, 'BUY', ${qty}, ${pick.price})`;

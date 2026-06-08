@@ -105,7 +105,7 @@ export async function GET() {
   //  account was actually funded with a different amount, e.g. $1,000,000.)
   const currentEquity = cash + totalValue;
   const derivedStart  = cash + totalCost - realizedPnL;
-  const startingCash   = derivedStart > 0 ? derivedStart : DEFAULT_STARTING_CASH;
+  const startingCash   = derivedStart > 0 ? derivedStart : currentEquity > 0 ? currentEquity : DEFAULT_STARTING_CASH;
   const totalReturn   = ((currentEquity - startingCash) / startingCash) * 100;
   const totalPnL      = currentEquity - startingCash;
 

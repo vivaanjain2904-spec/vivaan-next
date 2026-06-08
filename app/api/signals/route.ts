@@ -41,8 +41,8 @@ export async function POST(req: Request) {
       // Wrap the override into the Signal shape so the UI looks the same.
       out[tk] = {
         dropProb: overrides[tk],
-        rsi: NaN, ma20Position: "above", ma50Position: "above",
-        momentum1m: NaN,
+        rsi: 0, ma20Position: "above", ma50Position: "above",
+        momentum1m: 0,
         recommendation: overrides[tk] <= 0.35 ? "BUY" : overrides[tk] >= 0.65 ? "SELL" : "HOLD",
         source: "py",
       };
