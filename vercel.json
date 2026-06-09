@@ -2,8 +2,8 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "crons": [
     {
-      "path": "/api/cron/check-alerts",
-      "schedule": "0 14 * * *"
+      "path": "/api/refresh-signals",
+      "schedule": "0 13 * * 1-5"
     },
     {
       "path": "/api/admin/reconcile",

@@ -107,6 +107,10 @@ export async function initDb() {
     return_1m DOUBLE PRECISION,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )`;
+  try { await sql`ALTER TABLE ml_signals ADD COLUMN IF NOT EXISTS stop_loss DOUBLE PRECISION`; } catch {}
+  try { await sql`ALTER TABLE ml_signals ADD COLUMN IF NOT EXISTS take_profit DOUBLE PRECISION`; } catch {}
+  try { await sql`ALTER TABLE ml_signals ADD COLUMN IF NOT EXISTS momentum_1m DOUBLE PRECISION`; } catch {}
+  try { await sql`ALTER TABLE ml_signals ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'live'`; } catch {}
   // Factor strategy target portfolio (momentum+lowvol+regime), uploaded by the
   // research pipeline. The auto-rebalancer trades the user toward the latest row.
   await sql`CREATE TABLE IF NOT EXISTS factor_targets (
