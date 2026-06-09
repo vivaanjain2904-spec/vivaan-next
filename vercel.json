@@ -6,10 +6,6 @@
       "schedule": "0 13 * * 1-5"
     },
     {
-      "path": "/api/cron/check-alerts",
-      "schedule": "0 14 * * *"
-    },
-    {
       "path": "/api/admin/reconcile",
       "schedule": "0 22 * * 1-5"
     },

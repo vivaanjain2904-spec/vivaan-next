@@ -460,14 +460,15 @@ export async function POST() {
     avgCorr?: number;
   };
   const scored: Scored[] = [];
+  // Cache candles during scan so the correlation pass doesn't re-fetch
+  const candleCache = new Map<string, any[]>();
 
   // Score every candidate that has a valid (not-clearly-bearish) signal.
-  // No absolute threshold — we'll rank by dropProb and buy the best 3,
-  // ensuring the bot always acts even when no stock is screaming "buy".
   const results = await Promise.allSettled(
     quotedCandidates.map(async c => {
       const candles = await withTimeout(getChart(c.ticker, "3mo"), FETCH_TIMEOUT_MS);
       if (!candles) return null;
+      candleCache.set(c.ticker, candles);
       const sig = computeSignal(candles);
       // Prefer the Python model's score; fall back to TA signal.
       const dropProb = dropProbFor(c.ticker, sig);
@@ -491,16 +492,20 @@ export async function POST() {
   const qualified = scored.filter(s => s.dropProb <= regimeThreshold);
 
   // Re-rank by correlation-adjusted score: prefer low correlation to current holdings
+  // Uses cached candles — no extra HTTP fetches.
   if (positions.length > 0) {
-    // Get closes for top held positions (up to 3)
     const topHeld = positions.slice(0, 3);
     const heldCandles = await Promise.all(
-      topHeld.map(p => getChart(p.ticker, "3mo").catch(() => [] as any[]))
+      topHeld.map(p =>
+        candleCache.get(p.ticker)
+          ? Promise.resolve(candleCache.get(p.ticker)!)
+          : getChart(p.ticker, "3mo").catch(() => [] as any[])
+      )
     );
     const heldCloses = heldCandles.map(c => c.map((x: any) => x.c));
 
     for (const s of qualified) {
-      const candles = await getChart(s.ticker, "3mo").catch(() => [] as any[]);
+      const candles = candleCache.get(s.ticker) ?? [];
       const closes = candles.map((x: any) => x.c);
       const corrs = heldCloses.map(hc => Math.abs(pearsonCorr(closes, hc)));
       s.avgCorr = corrs.length ? corrs.reduce((a, b) => a + b, 0) / corrs.length : 0;
