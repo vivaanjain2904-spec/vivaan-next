@@ -63,7 +63,7 @@ export default function SettingsPage() {
     const body: any = {
       ntfy_topic: ntfy, discord_webhook: disc, email,
       ml_alerts: mlOn, ml_threshold: mlThr,
-      alpaca_key: apKey, alpaca_mode: apMode, auto_trade: autoT,
+      alpaca_key: apKey, alpaca_mode: "paper", auto_trade: autoT,
       smart_stops: smartStops,
       auto_buy_size: autoBuySize,
       autonomous_mode: autoMode,
@@ -179,40 +179,20 @@ export default function SettingsPage() {
       </div>
 
       {/* Auto-Trader */}
-      <div className="section-h">Auto-Trader · Alpaca {apMode === "live" ? "🔴 LIVE" : "Paper"}</div>
+      <div className="section-h">Auto-Trader · Alpaca Paper</div>
       <div className="panel mb-6">
         <div className="text-sm text-ink2 mb-4 leading-relaxed">
           When a stop / target / ML signal trips on a holding, the cron will
-          automatically place a trade via Alpaca and notify your phone with the receipt.
+          automatically place a paper trade via Alpaca and notify your phone with the receipt.
           <br /><br />
-          <b className="text-mint">Get keys:</b> sign up at{" "}
-          <a href="https://alpaca.markets/" target="_blank" rel="noreferrer" className="text-mint underline">alpaca.markets</a>.
-          Paper keys: <b>Paper Trading → API Keys</b>. Live keys: <b>Live Trading → API Keys</b>.
+          <b className="text-mint">Get free paper-trading keys:</b> sign up at{" "}
+          <a href="https://alpaca.markets/" target="_blank" rel="noreferrer" className="text-mint underline">alpaca.markets</a>,
+          go to <b>Paper Trading → API Keys</b>, generate, paste below.
         </div>
-
-        {/* Paper / Live toggle */}
-        <label className="label mb-2">Trading mode</label>
-        <div className="flex gap-2 mb-3">
-          <button type="button" onClick={() => setApMode("paper")}
-            className={`px-4 py-1.5 rounded-lg text-[12px] border font-semibold ${apMode === "paper" ? "border-mint text-mint bg-mint/10" : "border-border1 text-muted"}`}>
-            📄 Paper (safe)
-          </button>
-          <button type="button" onClick={() => setApMode("live")}
-            className={`px-4 py-1.5 rounded-lg text-[12px] border font-semibold ${apMode === "live" ? "border-red-500 text-red-400 bg-red-500/10" : "border-border1 text-muted"}`}>
-            💸 Live (real money)
-          </button>
-        </div>
-        {apMode === "live" && (
-          <div className="rounded-lg p-3 bg-red-500/10 border border-red-500/40 text-[12px] text-red-400 mb-4">
-            <b>⚠️ LIVE TRADING ENABLED.</b> The bot will place real orders with real money on your Alpaca live account.
-            Losses are real. Make sure you have tested your strategy in paper mode first and understand the risks.
-            Use live API keys (not paper keys) below. You are solely responsible for any trades placed.
-          </div>
-        )}
 
         <label className="label">Alpaca API key</label>
         <input className="input font-mono text-xs" value={apKey} onChange={e => setApKey(e.target.value)}
-               placeholder={apMode === "live" ? "AKxxxxxxxxxxxxxxx (live key)" : "PKxxxxxxxxxxxxxxx (paper key)"} autoComplete="off" />
+               placeholder="PKxxxxxxxxxxxxxxx (paper key)" autoComplete="off" />
         <label className="label mt-3">Alpaca API secret</label>
         <input type="password" className="input font-mono text-xs" value={apSec}
                onChange={e => setApSec(e.target.value)}
@@ -260,7 +240,7 @@ export default function SettingsPage() {
         {pingRes && (
           <div className={`mt-3 text-xs p-3 rounded-lg font-mono ${pingRes.ok ? "bg-mint/10 text-mint" : "bg-red/10 text-red"}`}>
             {pingRes.loading ? "Pinging…"
-              : pingRes.ok ? `✓ Connected (${apMode}) — cash $${Number(pingRes.account?.cash ?? 0).toFixed(2)}, equity $${Number(pingRes.account?.equity ?? 0).toFixed(2)}`
+              : pingRes.ok ? `✓ Connected (paper) — cash $${Number(pingRes.account?.cash ?? 0).toFixed(2)}, equity $${Number(pingRes.account?.equity ?? 0).toFixed(2)}`
               : `✗ ${pingRes.error}`}
           </div>
         )}
