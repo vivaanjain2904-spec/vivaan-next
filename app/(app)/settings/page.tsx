@@ -30,6 +30,7 @@ export default function SettingsPage() {
   const [recent, setRecent] = useState<any[]>([]);
   const [seedRes, setSeedRes] = useState<any>(null);
   const [pingRes, setPingRes] = useState<any>(null);
+  const [syncRes, setSyncRes] = useState<any>(null);
   const [runRes, setRunRes]   = useState<any>(null);
   const [notifyRes, setNotifyRes] = useState<any>(null);
 
@@ -93,6 +94,13 @@ export default function SettingsPage() {
     const r = await fetch("/api/alpaca-ping", { method: "POST" });
     const j = await r.json();
     setPingRes(j);
+  }
+  async function syncAlpaca() {
+    if (!confirm("Mirror your Vaelor positions onto Alpaca? This places paper buy orders for any shares Alpaca is missing. Safe to re-run.")) return;
+    setSyncRes({ loading: true });
+    const r = await fetch("/api/admin/sync-alpaca", { method: "POST" });
+    const j = await r.json().catch(() => ({ error: "request failed" }));
+    setSyncRes(j);
   }
   async function runAlertCheck() {
     setRunRes({ loading: true });
@@ -234,9 +242,19 @@ export default function SettingsPage() {
           {(user.alpaca_key && user.alpaca_secret) && (
             <button onClick={pingAlpaca} className="btn-ghost text-[12px]">🔌 Test Alpaca</button>
           )}
+          {(user.alpaca_key && user.alpaca_secret) && (
+            <button onClick={syncAlpaca} className="btn-ghost text-[12px]">🔄 Sync Positions to Alpaca</button>
+          )}
           <button onClick={testNotify} className="btn-ghost text-[12px]">📨 Test Notification</button>
           <span className="text-muted text-[11px]">Verifies Alpaca connection and that alerts reach your inbox.</span>
         </div>
+        {syncRes && (
+          <div className={`mt-3 text-xs p-3 rounded-lg font-mono ${syncRes.ok ? "bg-mint/10 text-mint" : "bg-red/10 text-red"}`}>
+            {syncRes.loading ? "Placing orders on Alpaca — this can take a minute…"
+              : syncRes.error ? `✗ ${syncRes.error}`
+              : `✓ Sync complete — ${syncRes.placed ?? 0} orders placed, ${syncRes.failed ?? 0} failed (of ${syncRes.total ?? 0}). Orders fill at next market open.`}
+          </div>
+        )}
         {pingRes && (
           <div className={`mt-3 text-xs p-3 rounded-lg font-mono ${pingRes.ok ? "bg-mint/10 text-mint" : "bg-red/10 text-red"}`}>
             {pingRes.loading ? "Pinging…"
