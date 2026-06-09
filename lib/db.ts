@@ -45,6 +45,10 @@ export async function initDb() {
   try { await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS smart_stops BOOLEAN NOT NULL DEFAULT FALSE`; } catch {}
   try { await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS auto_buy_size DOUBLE PRECISION NOT NULL DEFAULT 500`; } catch {}
   try { await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS email TEXT`; } catch {}
+  try { await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified BOOLEAN NOT NULL DEFAULT FALSE`; } catch {}
+  try { await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verify_token TEXT`; } catch {}
+  try { await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS pw_reset_token TEXT`; } catch {}
+  try { await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS pw_reset_expires TIMESTAMPTZ`; } catch {}
   try { await sql`ALTER TABLE positions ADD COLUMN IF NOT EXISTS review_at TIMESTAMPTZ`; } catch {}
   // Autonomous trader settings
   try { await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS autonomous_mode BOOLEAN NOT NULL DEFAULT FALSE`; } catch {}

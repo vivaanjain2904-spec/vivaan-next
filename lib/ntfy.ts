@@ -70,6 +70,19 @@ export async function sendEmail(to: string, title: string, body: string): Promis
   }
 }
 
+/** Send a raw HTML email via Resend. For transactional auth emails. */
+export async function sendRawEmail(to: string, subject: string, html: string): Promise<boolean> {
+  if (!to || !process.env.RESEND_API_KEY) return false;
+  try {
+    const resend = new Resend(process.env.RESEND_API_KEY);
+    const from = process.env.RESEND_FROM ?? "Vaelor <onboarding@resend.dev>";
+    const r = await resend.emails.send({ from, to: to.trim(), subject, html });
+    return !(r as any).error;
+  } catch {
+    return false;
+  }
+}
+
 function escapeHtml(s: string) {
   return s.replace(/[&<>"']/g, c =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] ?? c));
