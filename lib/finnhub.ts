@@ -91,6 +91,63 @@ export async function getFundamentals(ticker: string): Promise<Fundamentals | nu
   };
 }
 
+export type EarningsSurprise = {
+  period: string;       // e.g. "2026-03-31"
+  actual: number;       // reported EPS
+  estimate: number;     // consensus estimate
+  surprise: number;     // actual - estimate
+  surprisePct: number;  // (actual - estimate) / |estimate| * 100
+  daysAgo: number;      // how many days since this report
+};
+
+/**
+ * Most recent earnings surprise from Finnhub.
+ * Returns null if FINNHUB_KEY not set, no data, or estimate was zero.
+ * Finnhub endpoint: GET /stock/earnings?symbol=AAPL&limit=4
+ */
+export async function getLastEarningsSurprise(ticker: string): Promise<EarningsSurprise | null> {
+  const tk = ticker.toUpperCase();
+  const j = await _get<{ actual: number; estimate: number; period: string; symbol: string }[]>(
+    "/stock/earnings", { symbol: tk, limit: "4" }
+  );
+  if (!Array.isArray(j) || !j.length) return null;
+  // Sort by period descending, pick most recent past report
+  const past = j
+    .filter(e => e.actual != null && e.estimate != null && e.period)
+    .sort((a, b) => b.period.localeCompare(a.period));
+  if (!past.length) return null;
+  const e = past[0];
+  if (Math.abs(e.estimate) < 0.001) return null; // avoid divide-by-zero on near-zero estimates
+  const surprise = e.actual - e.estimate;
+  const surprisePct = (surprise / Math.abs(e.estimate)) * 100;
+  const daysAgo = Math.floor((Date.now() - new Date(e.period).getTime()) / 86_400_000);
+  return { period: e.period, actual: e.actual, estimate: e.estimate, surprise, surprisePct, daysAgo };
+}
+
+/**
+ * PEAD score: positive = bullish drift expected, negative = bearish.
+ * Returns null if no data or key missing.
+ * Only active within 60 days of the report (drift decays after that).
+ * Score range roughly -1..+1.
+ */
+export async function peadScore(ticker: string): Promise<number | null> {
+  const s = await getLastEarningsSurprise(ticker);
+  if (!s || s.daysAgo > 60) return null;  // outside PEAD window
+  // Decay linearly from full weight at day 0 to 0 at day 60
+  const decay = 1 - s.daysAgo / 60;
+  // Surprise magnitude buckets (surprisePct = % beat/miss vs estimate)
+  let raw = 0;
+  if (s.surprisePct > 20)      raw =  1.0;  // massive beat
+  else if (s.surprisePct > 10) raw =  0.6;  // strong beat
+  else if (s.surprisePct > 5)  raw =  0.3;  // moderate beat
+  else if (s.surprisePct > 2)  raw =  0.15; // small beat
+  else if (s.surprisePct < -20) raw = -1.0; // massive miss
+  else if (s.surprisePct < -10) raw = -0.6; // strong miss
+  else if (s.surprisePct < -5)  raw = -0.3; // moderate miss
+  else if (s.surprisePct < -2)  raw = -0.15;// small miss
+  return raw * decay;
+}
+
 /**
  * Net insider buying signal: ratio of purchases to (purchases + sales) in recent 90d.
  * Returns null if no transactions or key missing. 1.0 = all purchases, 0.0 = all sales.
