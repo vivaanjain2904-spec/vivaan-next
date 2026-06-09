@@ -17,7 +17,7 @@ export async function POST() {
   const s = await requireSession();
 
   const userRow = await sql`SELECT id, name, ntfy_topic, discord_webhook, email,
-    ml_alerts, ml_threshold, alpaca_key, alpaca_secret, auto_trade, auto_buy_size
+    ml_alerts, ml_threshold, alpaca_key, alpaca_secret, alpaca_mode, auto_trade, auto_buy_size
     FROM users WHERE id=${s.uid}`;
   const user = userRow.rows[0];
   if (!user) return NextResponse.json({ error: "user not found" }, { status: 404 });
@@ -77,7 +77,7 @@ export async function POST() {
     let alpacaOrderId: string | undefined, alpacaErr: string | undefined;
     if (user.alpaca_key && user.alpaca_secret) {
       const r = await alpacaSell(
-        { key: user.alpaca_key, secret: user.alpaca_secret }, ticker, qty);
+        { key: user.alpaca_key, secret: user.alpaca_secret, mode: user.alpaca_mode === "live" ? "live" : "paper" }, ticker, qty);
       if (r.ok) alpacaOrderId = r.orderId; else alpacaErr = r.error;
     }
 
@@ -189,7 +189,7 @@ export async function POST() {
       let alpacaOrderId: string | undefined, alpacaErr: string | undefined;
       if (user.alpaca_key && user.alpaca_secret) {
         const r = await alpacaBuy(
-          { key: user.alpaca_key, secret: user.alpaca_secret }, w.ticker, qty);
+          { key: user.alpaca_key, secret: user.alpaca_secret, mode: user.alpaca_mode === "live" ? "live" : "paper" }, w.ticker, qty);
         if (r.ok) alpacaOrderId = r.orderId; else alpacaErr = r.error;
       }
 

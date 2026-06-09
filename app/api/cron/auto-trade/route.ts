@@ -85,7 +85,7 @@ export async function GET(req: Request) {
   const factorAccount = process.env.FACTOR_ACCOUNT_NAME || "Vivaan";
   const usersR = await sql`SELECT id, name, cash, autonomous_mode, auto_scan_universe,
     max_positions, max_pos_pct, cash_reserve_pct, auto_buy_size, ml_threshold,
-    alpaca_key, alpaca_secret, auto_trade, ntfy_topic, discord_webhook, email
+    alpaca_key, alpaca_secret, alpaca_mode, auto_trade, ntfy_topic, discord_webhook, email
     FROM users WHERE autonomous_mode = TRUE AND strategy <> 'factor' AND name <> ${factorAccount}`;
 
   if (!usersR.rows.length) {
@@ -201,7 +201,7 @@ async function runForUser(user: any): Promise<any> {
 
     let alpacaOrderId: string | undefined;
     if (user.alpaca_key && user.alpaca_secret) {
-      const r = await alpacaBuy({ key: user.alpaca_key, secret: user.alpaca_secret }, pick.ticker, qty);
+      const r = await alpacaBuy({ key: user.alpaca_key, secret: user.alpaca_secret, mode: user.alpaca_mode === "live" ? "live" : "paper" }, pick.ticker, qty);
       if (r.ok) alpacaOrderId = r.orderId;
     }
 

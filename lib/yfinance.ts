@@ -249,24 +249,29 @@ export async function getNews(ticker: string, limit = 8): Promise<NewsItem[]> {
 
 /**
  * Returns the days until the next earnings report (positive = future, negative = past).
- * Returns null if Yahoo Finance has no upcoming earnings date for this ticker.
- * Used by the auto-trader to skip new positions inside the earnings window.
+ * Tries Finnhub first (more reliable), falls back to Yahoo Finance.
  */
 export async function daysUntilEarnings(ticker: string): Promise<number | null> {
   const tk = ticker.toUpperCase();
+  // Try Finnhub first if key is configured
+  try {
+    const { getEarningsDate } = await import("@/lib/finnhub");
+    const fh = await getEarningsDate(tk);
+    if (fh !== null) return fh;
+  } catch {}
+  // Yahoo Finance fallback
   try {
     const j: any = await _yfetch(
       `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(tk)}?modules=calendarEvents`,
     );
     const dates: { raw: number }[] = j?.quoteSummary?.result?.[0]?.calendarEvents?.earnings?.earningsDate ?? [];
     if (!dates.length) return null;
-    // Pick the earliest future date; fall back to the first listed if all past
     const now = Math.floor(Date.now() / 1000);
     const future = dates.filter(d => d?.raw && d.raw >= now).sort((a, b) => a.raw - b.raw);
     const target = future[0] ?? dates[0];
     if (!target?.raw) return null;
     return Math.floor((target.raw - now) / 86400);
-  } catch (e) {
+  } catch {
     return null;
   }
 }

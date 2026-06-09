@@ -7,11 +7,12 @@ export async function POST(req: Request) {
   await initDb().catch(() => {}); // ensures new columns (email, etc.) exist before write
   const {
     ntfy_topic, discord_webhook, email, ml_alerts, ml_threshold,
-    alpaca_key, alpaca_secret, auto_trade, smart_stops, auto_buy_size,
+    alpaca_key, alpaca_secret, alpaca_mode, auto_trade, smart_stops, auto_buy_size,
     autonomous_mode, auto_scan_universe, max_positions, max_pos_pct, cash_reserve_pct,
     strategy,
   } = await req.json();
   const strat = strategy === "factor" ? "factor" : "ta";
+  const aMode = alpaca_mode === "live" ? "live" : "paper";
   await sql`UPDATE users SET
     strategy           = ${strat},
     ntfy_topic      = ${ntfy_topic ? String(ntfy_topic).trim() : null},
@@ -21,6 +22,7 @@ export async function POST(req: Request) {
     ml_threshold    = ${Number(ml_threshold) || 0.65},
     alpaca_key      = ${alpaca_key    ? String(alpaca_key).trim()    : null},
     alpaca_secret   = ${alpaca_secret ? String(alpaca_secret).trim() : null},
+    alpaca_mode     = ${aMode},
     auto_trade      = ${!!auto_trade},
     smart_stops     = ${!!smart_stops},
     auto_buy_size   = ${Math.max(1, Number(auto_buy_size) || 500)},

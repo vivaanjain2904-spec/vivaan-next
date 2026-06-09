@@ -50,7 +50,7 @@ async function rebalanceUser(user: any, target: any) {
   const trades: any[] = [];
 
   const live = !!(user.alpaca_key && user.alpaca_secret);
-  const creds = { key: user.alpaca_key, secret: user.alpaca_secret };
+  const creds = { key: user.alpaca_key, secret: user.alpaca_secret, mode: (user.alpaca_mode === "live" ? "live" : "paper") as "live" | "paper" };
 
   // 1) SELL anything not in the target
   for (const p of positions) {

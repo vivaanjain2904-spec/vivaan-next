@@ -1,10 +1,17 @@
 /**
- * Thin Alpaca REST wrapper — PAPER trading only (forced for safety).
+ * Thin Alpaca REST wrapper — supports paper and live trading.
  * Docs: https://docs.alpaca.markets/reference/postorder
  */
 const PAPER_BASE = "https://paper-api.alpaca.markets";
+const LIVE_BASE  = "https://api.alpaca.markets";
 
-type Creds = { key: string; secret: string };
+export type AlpacaMode = "paper" | "live";
+
+type Creds = { key: string; secret: string; mode?: AlpacaMode };
+
+function base(c: Creds) {
+  return c.mode === "live" ? LIVE_BASE : PAPER_BASE;
+}
 
 function headers(c: Creds) {
   return {
@@ -34,7 +41,7 @@ async function _lastPrice(c: Creds, symbol: string): Promise<number | null> {
 }
 
 async function _getOrder(c: Creds, id: string) {
-  const r = await fetch(`${PAPER_BASE}/v2/orders/${id}`, { headers: headers(c) });
+  const r = await fetch(`${base(c)}/v2/orders/${id}`, { headers: headers(c) });
   if (!r.ok) return null;
   return r.json();
 }
@@ -68,7 +75,7 @@ async function _order(c: Creds, symbol: string, qty: number, side: "buy" | "sell
     let j: any = null, submitted = false;
     for (let attempt = 0; attempt < 2 && !submitted; attempt++) {
       try {
-        const r = await fetch(`${PAPER_BASE}/v2/orders`, { method: "POST", headers: headers(c), body: JSON.stringify(body) });
+        const r = await fetch(`${base(c)}/v2/orders`, { method: "POST", headers: headers(c), body: JSON.stringify(body) });
         j = await r.json();
         if (r.ok) { submitted = true; break; }
         // 4xx (e.g. insufficient buying power) → don't retry, it'll just fail again
@@ -112,14 +119,14 @@ export const alpacaBuy = (c: Creds, symbol: string, qty: number) =>
 /** Cancel a still-open order (e.g. a limit that didn't fill). */
 export async function alpacaCancel(c: Creds, orderId: string): Promise<boolean> {
   try {
-    const r = await fetch(`${PAPER_BASE}/v2/orders/${orderId}`, { method: "DELETE", headers: headers(c) });
+    const r = await fetch(`${base(c)}/v2/orders/${orderId}`, { method: "DELETE", headers: headers(c) });
     return r.ok || r.status === 404;
   } catch { return false; }
 }
 
 export async function alpacaPing(c: Creds): Promise<{ ok: boolean; account?: any; error?: string }> {
   try {
-    const r = await fetch(`${PAPER_BASE}/v2/account`, { headers: headers(c) });
+    const r = await fetch(`${base(c)}/v2/account`, { headers: headers(c) });
     const j = await r.json();
     if (!r.ok) return { ok: false, error: j.message ?? `HTTP ${r.status}` };
     return { ok: true, account: { cash: j.cash, status: j.status, equity: j.equity } };
@@ -131,7 +138,7 @@ export async function alpacaPing(c: Creds): Promise<{ ok: boolean; account?: any
 /** Live broker positions, keyed by ticker → qty. Used for reconciliation. */
 export async function alpacaPositions(c: Creds): Promise<{ ok: boolean; positions?: Record<string, number>; error?: string }> {
   try {
-    const r = await fetch(`${PAPER_BASE}/v2/positions`, { headers: headers(c) });
+    const r = await fetch(`${base(c)}/v2/positions`, { headers: headers(c) });
     const j = await r.json();
     if (!r.ok) return { ok: false, error: j.message ?? `HTTP ${r.status}` };
     const positions: Record<string, number> = {};

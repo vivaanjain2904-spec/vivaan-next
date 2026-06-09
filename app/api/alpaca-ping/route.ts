@@ -7,6 +7,6 @@ export async function POST() {
   const u: any = await getUserSettings(s.uid);
   if (!u?.alpaca_key || !u?.alpaca_secret)
     return NextResponse.json({ error: "Alpaca keys not set" }, { status: 400 });
-  const r = await alpacaPing({ key: u.alpaca_key, secret: u.alpaca_secret });
+  const r = await alpacaPing({ key: u.alpaca_key, secret: u.alpaca_secret, mode: u.alpaca_mode === "live" ? "live" : "paper" });
   return NextResponse.json(r);
 }

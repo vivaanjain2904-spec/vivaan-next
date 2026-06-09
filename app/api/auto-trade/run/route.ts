@@ -107,7 +107,7 @@ export async function POST() {
 
   const ur = await sql`SELECT id, name, cash, autonomous_mode, auto_scan_universe,
     max_positions, max_pos_pct, cash_reserve_pct, auto_buy_size, ml_threshold,
-    alpaca_key, alpaca_secret, auto_trade, ntfy_topic, discord_webhook, email,
+    alpaca_key, alpaca_secret, alpaca_mode, auto_trade, ntfy_topic, discord_webhook, email,
     core_ticker, core_pct, peak_equity, circuit_breaker_pct, circuit_breaker_until, strategy
     FROM users WHERE id=${s.uid}`;
   const user = ur.rows[0];
@@ -229,7 +229,7 @@ export async function POST() {
         // Alpaca leg
         let alpacaOrderId: string | undefined;
         if (user.alpaca_key && user.alpaca_secret) {
-          const r = await alpacaSell({ key: user.alpaca_key, secret: user.alpaca_secret }, p.ticker, qty);
+          const r = await alpacaSell({ key: user.alpaca_key, secret: user.alpaca_secret, mode: user.alpaca_mode === "live" ? "live" : "paper" }, p.ticker, qty);
           if (r.ok) alpacaOrderId = r.orderId;
         }
 
@@ -309,7 +309,7 @@ export async function POST() {
       const qty = Number(p.qty);
       const proceeds = qty * px;
       if (user.alpaca_key && user.alpaca_secret) {
-        try { await alpacaSell({ key: user.alpaca_key, secret: user.alpaca_secret }, p.ticker, qty); } catch {}
+        try { await alpacaSell({ key: user.alpaca_key, secret: user.alpaca_secret, mode: user.alpaca_mode === "live" ? "live" : "paper" }, p.ticker, qty); } catch {}
       }
       try {
         await sql`DELETE FROM positions WHERE user_id=${user.id} AND ticker=${p.ticker}`;
@@ -352,7 +352,7 @@ export async function POST() {
           if (qty >= 1) {
             const cost = qty * cpx;
             if (user.alpaca_key && user.alpaca_secret) {
-              try { await alpacaBuy({ key: user.alpaca_key, secret: user.alpaca_secret }, coreTicker, qty); } catch {}
+              try { await alpacaBuy({ key: user.alpaca_key, secret: user.alpaca_secret, mode: user.alpaca_mode === "live" ? "live" : "paper" }, coreTicker, qty); } catch {}
             }
             const newQty = (corePos ? Number(corePos.qty) : 0) + qty;
             const newAvg = corePos ? ((Number(corePos.qty) * Number(corePos.avg_cost)) + cost) / newQty : cpx;
@@ -549,7 +549,7 @@ export async function POST() {
     let alpacaOrderId: string | undefined, alpacaErr: string | undefined;
     if (user.alpaca_key && user.alpaca_secret) {
       const r = await alpacaBuy(
-        { key: user.alpaca_key, secret: user.alpaca_secret }, pick.ticker, qty);
+        { key: user.alpaca_key, secret: user.alpaca_secret, mode: user.alpaca_mode === "live" ? "live" : "paper" }, pick.ticker, qty);
       if (r.ok) alpacaOrderId = r.orderId; else alpacaErr = r.error;
     }
 
