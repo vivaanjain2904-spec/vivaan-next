@@ -18,13 +18,17 @@ function IconGrid()    { return (<svg {...ICON_PROPS}><rect x="3" y="3" width="7
 function IconBrain()   { return (<svg {...ICON_PROPS}><path d="M9 3a3 3 0 00-3 3 3 3 0 00-3 3v2a3 3 0 003 3v2a3 3 0 003 3 3 3 0 003-3M15 3a3 3 0 013 3 3 3 0 013 3v2a3 3 0 01-3 3v2a3 3 0 01-3 3 3 3 0 01-3-3"/></svg>); }
 function IconStar()    { return (<svg {...ICON_PROPS}><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>); }
 
-type Q = { ticker: string; price: number; pct: number; name: string; vol?: number };
-type ML = { ticker: string; drop_probability: number; price?: number; rsi?: number; return_1m?: number };
+type Q = { ticker: string; price: number; pct: number; name: string; vol?: number; hi52?: number; lo52?: number };
+type ML = {
+  ticker: string; drop_probability: number; price?: number; rsi?: number; return_1m?: number;
+  stop_loss?: number; take_profit?: number; momentum_1m?: number; source?: string; updated_at?: string;
+};
 type Pick = {
   ticker: string; name: string; price: number; day_pct: number;
   drop_prob: number; buy_strength: number; rsi: number; momentum_1m: number;
   smart_stops: { stop_loss: number; take_profit: number } | null;
   suggested_stop: number | null; suggested_target: number | null;
+  source: "ml" | "heuristic";
 };
 
 export default function ScreenerPage() {
@@ -62,66 +66,68 @@ export default function ScreenerPage() {
     { k: "ml",      label: "ML Signals",   Icon: IconBrain   },
   ] as const;
 
-  // Top Picks is derived ENTIRELY from the data already loaded by /api/screener.
-  // No extra fetches → no Yahoo rate-limit issues → never spins.
-  // Heuristic uses quote data only (no charts):
-  //   - distance from 52-week high (lower = more upside)
-  //   - day % (mild dip preferred, not a crash)
-  //   - position in 52-week range (closer to low = more room to run)
-  // Plus: if ml_signals from the DB rank a stock low (bullish), it gets a boost.
   const [picksError, setPicksError] = useState<string | null>(null);
   useEffect(() => {
     if (tab !== "picks" || !data) return;
     setPicksError(null);
 
-    // Build a lookup of ml drop_prob by ticker
-    const mlMap: Record<string, number> = {};
-    for (const m of data.ml) mlMap[m.ticker] = m.drop_probability;
+    // Build a full ml_signals lookup (includes real rsi, stops, momentum from batch pipeline)
+    const mlFull: Record<string, ML> = {};
+    for (const m of data.ml) mlFull[m.ticker] = m;
 
-    // Score the full universe (all 546 stocks) with a simple, instant heuristic.
-    // We have full quote data for every stock already loaded — no rate-limit risk.
     const scored: Pick[] = data.all
       .filter(q => q.price >= 5 && q.pct != null && (q.vol ?? 0) >= 100_000)
-      // Filter to a sweet spot: slightly down or modestly up (avoid blow-offs and crashes)
-      .filter(q => q.pct >= -6 && q.pct <= 3)
+      .filter(q => q.pct >= -8 && q.pct <= 4)
       .map(q => {
-        // Position 0=at-52w-low, 1=at-52w-high. Lower = more upside theoretically.
-        const hi = (q as any).hi52 ?? q.price;
-        const lo = (q as any).lo52 ?? q.price;
-        const rangePos = hi > lo ? (q.price - lo) / (hi - lo) : 0.5;
+        const ml = mlFull[q.ticker];
 
-        // Drop-probability: prefer ML score if available, else heuristic
-        let dropProb: number;
-        if (mlMap[q.ticker] != null) {
-          dropProb = mlMap[q.ticker];
-        } else {
-          // Simple heuristic: low range_pos + mild down day = bullish
-          // Score 0..1 where lower = more bullish
-          let score = 0.5;
-          score -= (1 - rangePos) * 0.20;            // closer to 52w low → -0.20
-          if (q.pct < 0 && q.pct > -3) score -= 0.10; // mild dip → -0.10
-          else if (q.pct < -3)         score += 0.10; // big drop → +0.10 (risky)
-          if (q.pct > 1)               score += 0.05; // already running → less upside
-          dropProb = Math.max(0.05, Math.min(0.95, score));
+        if (ml) {
+          // Real signal from the batch pipeline (Alpaca bars → computeSignal + computeSmartStops)
+          const sl = ml.stop_loss ?? 0.05;
+          const tp = ml.take_profit ?? 0.10;
+          return {
+            ticker: q.ticker,
+            name: q.name,
+            price: q.price,
+            day_pct: q.pct,
+            drop_prob: ml.drop_probability,
+            buy_strength: Math.round((1 - ml.drop_probability) * 100),
+            rsi: ml.rsi != null ? Math.round(ml.rsi) : 50,
+            momentum_1m: ml.momentum_1m ?? 0,
+            smart_stops: { stop_loss: sl, take_profit: tp },
+            suggested_stop:   Number((q.price * (1 - sl)).toFixed(2)),
+            suggested_target: Number((q.price * (1 + tp)).toFixed(2)),
+            source: "ml" as const,
+          };
         }
 
-        const price = q.price;
-        // Fallback stops/targets: 5% / 10% (no chart fetch needed)
+        // Heuristic fallback when batch pipeline hasn't run yet
+        const hi = q.hi52 ?? q.price;
+        const lo = q.lo52 ?? q.price;
+        const rangePos = hi > lo ? (q.price - lo) / (hi - lo) : 0.5;
+        let score = 0.5;
+        score -= (1 - rangePos) * 0.20;
+        if (q.pct < 0 && q.pct > -3) score -= 0.10;
+        else if (q.pct < -3)         score += 0.10;
+        if (q.pct > 1)               score += 0.05;
+        const dropProb = Math.max(0.05, Math.min(0.95, score));
         const sl = 0.05, tp = 0.10;
         return {
           ticker: q.ticker,
           name: q.name,
-          price,
+          price: q.price,
           day_pct: q.pct,
           drop_prob: dropProb,
           buy_strength: Math.round((1 - dropProb) * 100),
           rsi: 50,
           momentum_1m: 0,
           smart_stops: { stop_loss: sl, take_profit: tp },
-          suggested_stop:   Number((price * (1 - sl)).toFixed(2)),
-          suggested_target: Number((price * (1 + tp)).toFixed(2)),
+          suggested_stop:   Number((q.price * (1 - sl)).toFixed(2)),
+          suggested_target: Number((q.price * (1 + tp)).toFixed(2)),
+          source: "heuristic" as const,
         };
       })
+      .filter(p => p.drop_prob <= 0.40)  // only real buy signals
       .sort((a, b) => a.drop_prob - b.drop_prob)
       .slice(0, 20);
 
@@ -244,12 +250,15 @@ export default function ScreenerPage() {
       {tab === "picks" && (
         <>
           <div className="text-[12px] text-muted mb-3 leading-relaxed">
-            Highest-conviction <span className="text-mint font-semibold">BUY</span> candidates from
-            the universe, ranked by the multi-factor signal (RSI · MACD · Bollinger · Volume · MA · momentum).
-            Suggested entry, stop and target are ATR-based.
+            Highest-conviction <span className="text-mint font-semibold">BUY</span> candidates (dropProb ≤ 40%).
+            {data?.ml.length ? (
+              <span> Signals from the live batch pipeline (RSI · MACD · ATR stops). <span className="text-mint">{data.ml.length} tickers computed.</span></span>
+            ) : (
+              <span> Run <code className="text-mint">/api/refresh-signals</code> to compute real signals, or add Alpaca keys for automatic daily refresh.</span>
+            )}
             {picksTotal.candidates > 0 && (
               <span className="ml-2 text-muted">
-                · {picksTotal.candidates} of {picksTotal.scanned} scanned passed the bar.
+                · {picksTotal.candidates} of {picksTotal.scanned} passed the bar.
               </span>
             )}
           </div>
@@ -311,7 +320,12 @@ export default function ScreenerPage() {
                           {p.buy_strength}%
                         </span>
                       </td>
-                      <td className="px-3 py-3 text-right text-ink2">{p.rsi}</td>
+                      <td className="px-3 py-3 text-right text-ink2">
+                        {p.rsi}
+                        {p.source === "heuristic" && (
+                          <div className="text-[9px] text-muted/60 font-sans">est</div>
+                        )}
+                      </td>
                       <td className="px-3 py-3 text-right">
                         <div className="text-ink">{fp(p.price)} → <span className="text-mint">{p.suggested_target != null ? fp(p.suggested_target) : "—"}</span></div>
                         <div className="text-[10px] text-muted">
@@ -450,9 +464,13 @@ export default function ScreenerPage() {
                       </>
                     ) : (() => {
                       const sig = computedSig?.[r.ticker];
-                      const stops = smartStops[r.ticker];
+                      // Prefer ml_signals ATR stops; fall back to per-ticker smart-stops fetch
+                      const mlEntry = data?.ml.find(m => m.ticker === r.ticker);
+                      const stops = mlEntry?.stop_loss != null
+                        ? { stop_loss: mlEntry.stop_loss, take_profit: mlEntry.take_profit ?? 0.10 }
+                        : smartStops[r.ticker];
                       const buyAt  = sig && stops && r.price && sig.recommendation === "BUY"
-                        ? r.price * (1 - stops.stop_loss * 0.5)  // halfway between live price and stop
+                        ? r.price * (1 - stops.stop_loss)
                         : null;
                       const sellAt = sig && stops && r.price && sig.recommendation !== "SELL"
                         ? r.price * (1 + stops.take_profit)

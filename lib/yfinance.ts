@@ -128,6 +128,64 @@ export async function getQuotes(tickers: string[]): Promise<Record<string, Quote
 
 export type Candle = { t: number; o: number; h: number; l: number; c: number; v: number };
 
+/**
+ * Bulk daily bars for many symbols via Alpaca's free IEX feed.
+ * Returns a map of TICKER → sorted Candle[]. Falls back to {} when keys
+ * are missing or the request fails — callers should handle empty arrays.
+ * Automatically paginates via next_page_token and batches in chunks of 100.
+ */
+export async function getBarsBulk(tickers: string[], days = 90): Promise<Record<string, Candle[]>> {
+  const key = process.env.ALPACA_DATA_KEY || process.env.ALPACA_KEY;
+  const secret = process.env.ALPACA_DATA_SECRET || process.env.ALPACA_SECRET;
+  if (!key || !secret || !tickers.length) return {};
+
+  const start = new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
+  const out: Record<string, Candle[]> = {};
+
+  for (let i = 0; i < tickers.length; i += 100) {
+    const chunk = tickers.slice(i, i + 100);
+    const syms = chunk.join(",");
+    const byTicker: Record<string, Candle[]> = {};
+    let pageToken: string | null = null;
+
+    do {
+      try {
+        const url = new URL("https://data.alpaca.markets/v2/stocks/bars");
+        url.searchParams.set("symbols", syms);
+        url.searchParams.set("timeframe", "1Day");
+        url.searchParams.set("start", start);
+        url.searchParams.set("feed", "iex");
+        url.searchParams.set("limit", "1000");
+        if (pageToken) url.searchParams.set("page_token", pageToken);
+
+        const r = await fetch(url.toString(), {
+          headers: { "APCA-API-KEY-ID": key, "APCA-API-SECRET-KEY": secret },
+          cache: "no-store",
+        });
+        if (!r.ok) break;
+        const j = await r.json();
+        const bars: Record<string, any[]> = j?.bars ?? {};
+        for (const [sym, arr] of Object.entries(bars)) {
+          if (!byTicker[sym]) byTicker[sym] = [];
+          for (const b of arr) {
+            byTicker[sym].push({
+              t: Math.floor(new Date(b.t).getTime() / 1000),
+              o: b.o, h: b.h, l: b.l, c: b.c, v: b.v,
+            });
+          }
+        }
+        pageToken = j?.next_page_token ?? null;
+      } catch { break; }
+    } while (pageToken);
+
+    for (const [sym, candles] of Object.entries(byTicker)) {
+      out[sym.toUpperCase()] = candles.sort((a, b) => a.t - b.t);
+    }
+  }
+
+  return out;
+}
+
 const INTERVAL: Record<string, string> = {
   "1d": "5m", "5d": "30m", "1mo": "1d", "3mo": "1d",
   "6mo": "1d", "1y": "1d", "2y": "1wk", "5y": "1wk",

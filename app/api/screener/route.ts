@@ -27,8 +27,9 @@ export async function GET() {
 
   let ml: any[] = [];
   try {
-    const r = await sql`SELECT ticker, drop_probability, price, rsi, return_1m
-      FROM ml_signals ORDER BY drop_probability ASC LIMIT 50`;
+    const r = await sql`SELECT ticker, drop_probability, price, rsi, return_1m,
+        stop_loss, take_profit, momentum_1m, source, updated_at
+      FROM ml_signals ORDER BY drop_probability ASC LIMIT 200`;
     ml = r.rows;
   } catch { ml = []; }
 

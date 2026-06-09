@@ -153,7 +153,8 @@ export async function POST() {
   // This is what actually connects the validated Python research to the bot.
   const mlOverride = new Map<string, number>();
   try {
-    const r = await sql`SELECT ticker, drop_probability FROM ml_signals`;
+    const r = await sql`SELECT ticker, drop_probability FROM ml_signals
+      WHERE updated_at > NOW() - INTERVAL '24 hours'`;
     for (const row of r.rows) mlOverride.set(row.ticker, Number(row.drop_probability));
   } catch {}
   const dropProbFor = (ticker: string, taSignal: { dropProb: number } | null): number | null =>

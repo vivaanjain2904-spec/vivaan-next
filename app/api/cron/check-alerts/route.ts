@@ -53,7 +53,8 @@ export async function GET(req: Request) {
 
   // ML signals — Python uploads first, fall back to live compute per ticker
   const pyR = await sql`SELECT ticker, drop_probability FROM ml_signals
-    WHERE ticker = ANY(${tickerArr as any})`;
+    WHERE ticker = ANY(${tickerArr as any})
+      AND updated_at > NOW() - INTERVAL '24 hours'`;
   const ml: Record<string, number> = {};
   for (const r of pyR.rows) ml[r.ticker] = Number(r.drop_probability);
 
