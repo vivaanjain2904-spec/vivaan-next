@@ -253,6 +253,11 @@ export default function SettingsPage() {
             {syncRes.loading ? "Placing orders on Alpaca — this can take a minute…"
               : syncRes.error ? `✗ ${syncRes.error}`
               : `✓ Sync complete — ${syncRes.placed ?? 0} orders placed, ${syncRes.failed ?? 0} failed (of ${syncRes.total ?? 0}). Orders fill at next market open.`}
+            {Array.isArray(syncRes.results) && syncRes.results.filter((r: any) => !r.ok).map((r: any) => (
+              <div key={r.ticker} className="mt-1 text-red">
+                ✗ {r.ticker} ×{r.qty}: {r.error ?? r.status ?? "unknown error"}
+              </div>
+            ))}
           </div>
         )}
         {pingRes && (
