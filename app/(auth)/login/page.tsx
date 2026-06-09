@@ -20,7 +20,10 @@ export default function LoginPage() {
     });
     setBusy(false);
     if (r.ok) router.push("/overview");
-    else { const j = await r.json().catch(() => ({})); setErr(j.error ?? "Login failed"); }
+    else {
+      const j = await r.json().catch(() => ({}));
+      setErr(j.error ?? "Login failed");
+    }
   }
 
   return (
@@ -76,7 +79,9 @@ export default function LoginPage() {
               <Link href="/register" className="text-white/50 hover:text-vaelor transition-colors">
                 Request access
               </Link>
-              <span>Authorized use only</span>
+              <Link href="/forgot-password" className="text-white/50 hover:text-vaelor transition-colors">
+                Forgot password
+              </Link>
             </div>
           </form>
         </div>

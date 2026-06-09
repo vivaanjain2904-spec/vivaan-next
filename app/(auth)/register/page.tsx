@@ -24,7 +24,7 @@ export default function RegisterPage() {
       body: JSON.stringify({ name, email, password: pw, starting_cash: cash }),
     });
     setBusy(false);
-    if (r.ok) router.push("/overview");
+    if (r.ok) router.push("/verify-email");
     else { const j = await r.json().catch(() => ({})); setErr(j.error ?? "Sign-up failed"); }
   }
 

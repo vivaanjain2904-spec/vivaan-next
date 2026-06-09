@@ -6,10 +6,16 @@ export async function POST(req: Request) {
   const { name, password } = await req.json();
   if (!name || !password) return NextResponse.json({ error: "Missing fields" }, { status: 400 });
   await initDb().catch(() => {});  // self-init on first call ever
-  const r = await sql`SELECT id, name, pw_hash FROM users WHERE name=${name.trim()}`;
+  const r = await sql`SELECT id, name, pw_hash, email_verified FROM users WHERE name=${name.trim()}`;
   const u = r.rows[0];
   if (!u || !(await verifyPassword(password, u.pw_hash))) {
     return NextResponse.json({ error: "Incorrect username or password" }, { status: 401 });
+  }
+  if (!u.email_verified) {
+    return NextResponse.json(
+      { error: "Please verify your email before logging in. Check your inbox.", needsVerification: true },
+      { status: 403 },
+    );
   }
   await setSessionCookie({ uid: u.id, name: u.name });
   return NextResponse.json({ ok: true, name: u.name });
