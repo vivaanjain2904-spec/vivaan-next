@@ -70,7 +70,7 @@ export async function POST(req: Request) {
       // 3) Broker reconciliation (only meaningful for live trading)
       let brokerCheck = "skipped (paper/no-keys)";
       if (u.auto_trade && u.alpaca_key && u.alpaca_secret) {
-        const ap = await alpacaPositions({ key: u.alpaca_key, secret: u.alpaca_secret });
+        const ap = await alpacaPositions({ key: u.alpaca_key, secret: u.alpaca_secret, mode: u.alpaca_mode === "live" ? "live" : "paper" });
         if (!ap.ok) { issues.push(`Alpaca positions fetch failed: ${ap.error}`); brokerCheck = "error"; }
         else {
           const broker = ap.positions || {};

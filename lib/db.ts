@@ -60,6 +60,8 @@ export async function initDb() {
   try { await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS circuit_breaker_until TIMESTAMPTZ`; } catch {}                      // cooldown end after a breach
   // Per-account strategy: 'ta' (classic auto-trade) or 'factor' (momentum+lowvol+regime)
   try { await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS strategy TEXT NOT NULL DEFAULT 'ta'`; } catch {}
+  // Alpaca trading mode: 'paper' (default, safe) or 'live' (real money)
+  try { await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS alpaca_mode TEXT NOT NULL DEFAULT 'paper'`; } catch {}
   await sql`CREATE TABLE IF NOT EXISTS positions (
     user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
     ticker  TEXT NOT NULL,

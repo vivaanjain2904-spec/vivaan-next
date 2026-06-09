@@ -28,7 +28,7 @@ export async function GET(req: Request) {
   // monthly factor rebalance, not by TA stop/target/ML auto-sells.
   const factorAccount = process.env.FACTOR_ACCOUNT_NAME || "Vivaan";
   const usersR = await sql`SELECT id, name, ntfy_topic, discord_webhook, email,
-    ml_alerts, ml_threshold, alpaca_key, alpaca_secret, auto_trade, auto_buy_size
+    ml_alerts, ml_threshold, alpaca_key, alpaca_secret, alpaca_mode, auto_trade, auto_buy_size
     FROM users WHERE strategy <> 'factor' AND name <> ${factorAccount}`;
   if (!usersR.rows.length) return NextResponse.json({ ok: true, msg: "no users" });
 
@@ -90,7 +90,7 @@ export async function GET(req: Request) {
     let alpacaOrderId: string | undefined, alpacaErr: string | undefined;
     if (user.alpaca_key && user.alpaca_secret) {
       const r = await alpacaSell(
-        { key: user.alpaca_key, secret: user.alpaca_secret }, ticker, qty);
+        { key: user.alpaca_key, secret: user.alpaca_secret, mode: user.alpaca_mode === "live" ? "live" : "paper" }, ticker, qty);
       if (r.ok) {
         alpacaOrderId = r.orderId;
         if (r.filledQty && r.filledQty < qty) filledQty = r.filledQty;
@@ -247,7 +247,7 @@ export async function GET(req: Request) {
         let alpacaOrderId: string | undefined;
         if (user.alpaca_key && user.alpaca_secret) {
           const r = await alpacaBuy(
-            { key: user.alpaca_key, secret: user.alpaca_secret }, w.ticker, qty);
+            { key: user.alpaca_key, secret: user.alpaca_secret, mode: user.alpaca_mode === "live" ? "live" : "paper" }, w.ticker, qty);
           if (r.ok) alpacaOrderId = r.orderId;
         }
         try {
