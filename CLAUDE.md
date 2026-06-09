@@ -131,3 +131,120 @@ Also queued by owner (after the batch pipeline):
 - Niche-market idea (owner leaning toward, from my list): **insider-buying clusters
   (SEC Form 4) + post-earnings drift (PEAD)** — both free data, plug into signal,
   underexploited at his portfolio size. (Owner said: perfect the model first, then niche.)
+
+---
+
+## Full Feature Inventory (audited 2026-06-09)
+
+### Pages (`app/`)
+| Route | File | Status | Notes |
+|-------|------|--------|-------|
+| `/` | `app/page.tsx` | ✅ | Landing page (shown to everyone, no auto-redirect) |
+| `/welcome` | `app/welcome/page.tsx` | ✅ | Onboarding/welcome screen |
+| `/login` | `app/(auth)/login/page.tsx` | ✅ | JWT cookie auth |
+| `/register` | `app/(auth)/register/page.tsx` | ✅ | Creates user + email field |
+| `/founder` | `app/founder/page.tsx` | ✅ | About/founder credibility page |
+| `/brand` | `app/brand/page.tsx` | ✅ | Brand assets page |
+| `/track-record` | `app/track-record/page.tsx` | ✅ | Public strategy vs SPY chart (forward-only, no backfill) |
+| `/suggestions` | `app/suggestions/page.tsx` | ✅ | Suggest-mode: recommended trades for user approval (no auto-exec) |
+| `/overview` | `app/(app)/overview/page.tsx` | ✅ | Dashboard — portfolio summary, ML status row, quick-start tiles |
+| `/screener` | `app/(app)/screener/page.tsx` | ⚠️ PARTIAL | Gainers/Losers/Active tabs = real. **Top Picks = FAKE** (hardcoded rsi:50, sl:0.05; Buy≤ not real entry). Fix: batch pipeline (see NEXT TASK) |
+| `/trade` | `app/(app)/trade/page.tsx` | ✅ | Manual buy/sell; "Recommended Setup" = REAL ATR stops via `api/recommend/[ticker]` |
+| `/charts` | `app/(app)/charts/page.tsx` | ✅ | OHLCV charts via Yahoo Finance v8 |
+| `/news` | `app/(app)/news/page.tsx` | ✅ | Ticker news feed via Yahoo Finance search API |
+| `/watchlist` | `app/(app)/watchlist/page.tsx` | ✅ | Price alerts (above/below) + ML alert toggle |
+| `/performance` | `app/(app)/performance/page.tsx` | ✅ | P&L, win rate, SPY benchmark, equity curve; starting cash derived from first trade |
+| `/backtest` | `app/(app)/backtest/page.tsx` | ✅ | Per-ticker backtest via `api/backtest/[ticker]` → `lib/backtest.ts` |
+| `/settings` | `app/(app)/settings/page.tsx` | ✅ | Alpaca keys, ntfy/Discord/email alerts, autonomous mode knobs, strategy toggle |
+| `/admin` | `app/(app)/admin/page.tsx` | ✅ | Admin-only: user list, stats, trade counts |
+
+### API Routes (`app/api/`)
+
+**Market Data**
+| Endpoint | File | Notes |
+|----------|------|-------|
+| `GET /api/quote/[ticker]` | `app/api/quote/[ticker]/route.ts` | Single real-time quote (Alpaca → Yahoo fallback) |
+| `GET /api/chart/[ticker]` | `app/api/chart/[ticker]/route.ts` | OHLCV candles (Yahoo v8) |
+| `GET /api/news/[ticker]` | `app/api/news/[ticker]/route.ts` | Headline feed (Yahoo search) |
+| `GET /api/recommend/[ticker]` | `app/api/recommend/[ticker]/route.ts` | ✅ Real ATR stops + entry target via `computeRecommendation` |
+| `GET /api/smart-stops/[ticker]` | `app/api/smart-stops/[ticker]/route.ts` | ATR-based stop_loss/take_profit fractions |
+| `GET /api/backtest/[ticker]` | `app/api/backtest/[ticker]/route.ts` | Walk-forward backtest via `lib/backtest.ts` |
+
+**Screener / Signals**
+| Endpoint | File | Notes |
+|----------|------|-------|
+| `GET /api/screener` | `app/api/screener/route.ts` | Full 546-ticker universe: gainers/losers/active + ml_signals join. `force-dynamic`. |
+| `GET /api/picks` | `app/api/picks/route.ts` | ⚠️ 20-stock hardcoded POOL; prefers ml_signals, falls back to live scan. Feeds Top Picks when screener data absent. |
+| `POST /api/signals` | `app/api/signals/route.ts` | Compute dropProb for arbitrary tickers; checks ml_signals overrides first |
+| `GET /api/universe` | `app/api/universe/route.ts` | Returns full UNIVERSE ticker list (~546) |
+
+**Trading**
+| Endpoint | File | Notes |
+|----------|------|-------|
+| `GET/POST/PATCH/DELETE /api/trade` | `app/api/trade/route.ts` | Manual buy/sell/update positions. PATCH only updates provided stop/tp fields (bug fixed PR#1). |
+| `GET /api/portfolio` | `app/api/portfolio/route.ts` | Positions + watchlist + real-time quotes + ml_signals signals |
+| `POST /api/auto-trade/run` | `app/api/auto-trade/run/route.ts` | Manual trigger: full TA buy+sell cycle. 150-stock POOL. Regime-adjusted thresholds, sector cap, correlation filter, earnings filter 14d. |
+| `POST /api/run-alerts-self` | `app/api/run-alerts-self/route.ts` | Self-trigger alert check for logged-in user (no cron secret needed) |
+| `GET/POST /api/suggestions` | `app/api/suggestions/route.ts` | Suggest-mode: recommended factor-rebalance trades for user approval |
+| `POST /api/factor-rebalance/run` | `app/api/factor-rebalance/run/route.ts` | Execute factor rebalance toward latest factor_targets row. 1.5% no-trade band. Scoped to factor-strategy accounts only. |
+
+**Crons (GitHub Actions + Vercel cron)**
+| Endpoint | Schedule | Notes |
+|----------|----------|-------|
+| `POST /api/cron/auto-trade` | GitHub Action 14:30 UTC weekdays | Full TA discovery+buy cycle for all `autonomous_mode` users (excl. factor accounts). 150-stock POOL. |
+| `POST /api/cron/check-alerts` | GitHub Action every 15min 13-21 UTC weekdays | Sell/buy triggers, trailing stop ratchet, ML alerts. Respects Alpaca filledQty. |
+| `GET/POST /api/admin/reconcile` | Vercel cron 22:00 UTC weekdays | DB vs Alpaca position drift check; sends alerts on mismatch |
+| `GET/POST /api/admin/nav-snapshot` | Vercel cron 21:05 UTC weekdays | Records daily factor strategy NAV vs SPY into `strategy_nav` table |
+
+**Admin**
+| Endpoint | File | Notes |
+|----------|------|-------|
+| `GET /api/admin/stats` | `app/api/admin/stats/route.ts` | User count, recent signups, top watchlist tickers. `requireAdmin()` protected. |
+| `GET/PUT /api/admin/user/[id]` | `app/api/admin/user/[id]/route.ts` | Edit user (admin only) |
+| `GET /api/admin/users` | `app/api/admin/users/route.ts` | List all users (admin only) |
+| `POST /api/admin/factor-target` | `app/api/admin/factor-target/route.ts` | Upload daily factor portfolio from Python pipeline (ADMIN_UPLOAD_SECRET) |
+| `GET /api/public/performance` | `app/api/public/performance/route.ts` | Public track record (no auth). Uses `strategy_nav` table. |
+
+**Auth / Settings**
+| Endpoint | Notes |
+|----------|-------|
+| `POST /api/auth/login` | Issues JWT `vv_session` cookie |
+| `POST /api/auth/register` | Creates user, collects email |
+| `GET /api/auth/me` | Session info |
+| `POST /api/auth/logout` | Clears cookie |
+| `POST /api/settings` | All user settings: Alpaca keys, notification channels, trading knobs, strategy toggle |
+| `POST /api/alpaca-ping` | Test Alpaca connectivity |
+| `POST /api/seed-demo` | Seeds 10-stock starter portfolio at current prices (~$2500 each) |
+| `GET/POST /api/watchlist` | Add/remove/update watchlist entries |
+| `GET /api/notifications` | Undelivered in-app notifications; marks delivered on fetch |
+| `POST /api/test-notify` | Test notification delivery |
+| `POST /api/setup` | One-time setup wizard |
+
+### Library Modules (`lib/`)
+| File | Purpose | Known Issues |
+|------|---------|-------------|
+| `lib/signal.ts` | `computeSignal`, `computeSmartStops`, `computeTrailingStop`, `computeRecommendation`, `computeMarketRegime`, `sizingMultiplier` | `dropProb` is a heuristic (not calibrated). Factor weights hardcoded. RSI returns 50 for <15 bars. |
+| `lib/yfinance.ts` | `getQuote`, `getQuotes` (Alpaca bulk), `getChart`, `getSparkline`, `getNews`, `daysUntilEarnings` | No batch bars endpoint yet. `getChart` = per-ticker Yahoo (rate-limit risk for bulk jobs). |
+| `lib/alpaca.ts` | `alpacaBuy`, `alpacaSell`, `alpacaPositions`, `alpacaPing` | Paper-trading only |
+| `lib/db.ts` | `sql`, `initDb` (schema with idempotent ADD COLUMN) | `ml_signals` missing `stop_loss`, `take_profit`, `momentum_1m`, `source` columns (needed for batch pipeline) |
+| `lib/auth.ts` | `requireSession`, `requireAdmin`, `hashPassword`, `getUserSettings` | JWT_SECRET warning in production ✅ |
+| `lib/signal.ts` | See above | |
+| `lib/sentiment.ts` | Word-list headline scorer | Unvalidated; -0.4 sell threshold is a guess |
+| `lib/backtest.ts` | Walk-forward signal backtest | Survivorship bias risk (delisted names absent) |
+| `lib/universe.ts` | ~546 ticker UNIVERSE + `SECTOR` map | Used for screener full scan |
+| `lib/ntfy.ts` | Push notifications: ntfy.sh, Discord webhook, email | |
+| `lib/format.ts` | Number/currency formatting helpers | |
+
+### DB Tables
+| Table | Purpose |
+|-------|---------|
+| `users` | Auth + all settings columns (via ADD COLUMN IF NOT EXISTS) |
+| `positions` | Holdings: qty, avg_cost, stop_loss, take_profit, review_at |
+| `trades` | Trade history log |
+| `watchlist` | Price/ML alert config per ticker |
+| `notifications` | In-app + external notification queue |
+| `alert_state` | Dedup guard for repeated alerts |
+| `ml_signals` | Signal store: drop_probability, price, rsi, return_1m, updated_at. **Missing**: stop_loss, take_profit, momentum_1m, source |
+| `factor_targets` | Uploaded daily factor portfolio (JSON weights + regime + exposure) |
+| `strategy_nav` | Daily factor strategy NAV vs SPY (public track record) |
+| `nav_prices` | Last-seen close prices for NAV computation |
