@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { sql } from "@/lib/db";
 import { requireSession, getUserSettings } from "@/lib/auth";
-import { alpacaBuy, alpacaPositions, alpacaPing } from "@/lib/alpaca";
+import { alpacaBuy, alpacaPositions, alpacaPing, alpacaOpenBuyQty } from "@/lib/alpaca";
 
 export const maxDuration = 300;
 
@@ -40,15 +40,20 @@ async function run(execute: boolean) {
     return NextResponse.json({ error: `Alpaca positions fetch failed: ${broker.error}` }, { status: 502 });
   const brokerQty = broker.positions ?? {};
 
+  // Pending (accepted, unfilled) buy orders also count as "already covered" —
+  // without this, re-running before the market opens would double-order.
+  const open = await alpacaOpenBuyQty(creds);
+  const pendingQty = open.ok ? (open.pending ?? {}) : {};
+
   const posR = await sql`SELECT ticker, qty FROM positions WHERE user_id=${s.uid} AND qty > 0 ORDER BY ticker`;
 
-  const plan: { ticker: string; dbQty: number; brokerQty: number; toBuy: number }[] = [];
+  const plan: { ticker: string; dbQty: number; brokerQty: number; pendingQty: number; toBuy: number }[] = [];
   for (const p of posR.rows) {
     const tk = String(p.ticker).toUpperCase();
     const dbQty = Math.floor(Number(p.qty));
-    const have = Math.floor(Number(brokerQty[tk] ?? 0));
+    const have = Math.floor(Number(brokerQty[tk] ?? 0)) + Math.floor(Number(pendingQty[tk] ?? 0));
     const toBuy = dbQty - have;
-    if (toBuy > 0) plan.push({ ticker: tk, dbQty, brokerQty: have, toBuy });
+    if (toBuy > 0) plan.push({ ticker: tk, dbQty, brokerQty: Math.floor(Number(brokerQty[tk] ?? 0)), pendingQty: Math.floor(Number(pendingQty[tk] ?? 0)), toBuy });
   }
 
   if (!execute) {
@@ -64,11 +69,15 @@ async function run(execute: boolean) {
   let placed = 0, failed = 0;
   for (const o of plan) {
     const r = await alpacaBuy(creds, o.ticker, o.toBuy);
-    if (r.ok) placed++; else failed++;
+    // An accepted order that hasn't filled yet (market closed) is still a
+    // success for sync purposes — r.ok is fill-based, so also accept any
+    // submitted order id with a non-rejected status.
+    const submitted = r.ok || (!!r.orderId && !["rejected", "canceled", "expired"].includes(String(r.status)));
+    if (submitted) placed++; else failed++;
     results.push({
       ticker: o.ticker, qty: o.toBuy,
-      ok: r.ok, status: r.status, filledQty: r.filledQty,
-      orderId: r.orderId, error: r.error,
+      ok: submitted, status: r.status, filledQty: r.filledQty,
+      orderId: r.orderId, error: submitted ? undefined : r.error,
     });
   }
 

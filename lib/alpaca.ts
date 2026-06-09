@@ -135,6 +135,25 @@ export async function alpacaPing(c: Creds): Promise<{ ok: boolean; account?: any
   }
 }
 
+/** Open (unfilled) BUY order quantity per ticker. Used to make broker sync idempotent before fills. */
+export async function alpacaOpenBuyQty(c: Creds): Promise<{ ok: boolean; pending?: Record<string, number>; error?: string }> {
+  try {
+    const r = await fetch(`${base(c)}/v2/orders?status=open&limit=500`, { headers: headers(c) });
+    const j = await r.json();
+    if (!r.ok) return { ok: false, error: j.message ?? `HTTP ${r.status}` };
+    const pending: Record<string, number> = {};
+    for (const o of j) {
+      if (o.side !== "buy") continue;
+      const sym = String(o.symbol).toUpperCase();
+      const remaining = Number(o.qty ?? 0) - Number(o.filled_qty ?? 0);
+      if (remaining > 0) pending[sym] = (pending[sym] ?? 0) + remaining;
+    }
+    return { ok: true, pending };
+  } catch (e: any) {
+    return { ok: false, error: String(e?.message ?? e) };
+  }
+}
+
 /** Live broker positions, keyed by ticker → qty. Used for reconciliation. */
 export async function alpacaPositions(c: Creds): Promise<{ ok: boolean; positions?: Record<string, number>; error?: string }> {
   try {
