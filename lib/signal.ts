@@ -23,6 +23,7 @@ export type Signal = {
  */
 export type SignalHints = {
   insiderBuyScore?: number | null; // 0..1 from lib/finnhub insiderBuyingScore; >0.6 = bullish cluster
+  pead?: number | null;            // -1..+1 from lib/finnhub peadScore; positive = post-earnings drift up
 };
 
 export function computeSignal(candles: Candle[], hints?: SignalHints): Signal | null {
@@ -72,6 +73,9 @@ export function computeSignal(candles: Candle[], hints?: SignalHints): Signal | 
     else if (ibs > 0.55) drop -= 0.03;  // mild net buying
     else if (ibs < 0.25) drop += 0.04;  // net insider selling
   }
+  // PEAD: post-earnings drift — beat reduces drop prob, miss raises it (decays over 60 days)
+  const pead = hints?.pead;
+  if (pead != null) drop -= pead * 0.08; // max ±0.08 at full beat/miss with no decay
   drop = Math.max(0, Math.min(1, drop));
 
   return {
