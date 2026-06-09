@@ -21,7 +21,7 @@ export async function POST(req: Request) {
   const overrides: Record<string, number> = {};
   try {
     const r = await sql`SELECT ticker, drop_probability FROM ml_signals
-      WHERE ticker = ANY(${upper as any})`;
+      WHERE ticker = ANY(${upper as any}) AND updated_at > NOW() - INTERVAL '24 hours'`;
     for (const row of r.rows) overrides[row.ticker] = Number(row.drop_probability);
   } catch {}
 

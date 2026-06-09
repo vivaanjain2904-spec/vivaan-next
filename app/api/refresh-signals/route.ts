@@ -3,6 +3,7 @@ import { sql, initDb } from "@/lib/db";
 import { requireSession } from "@/lib/auth";
 import { getBarsBulk } from "@/lib/yfinance";
 import { computeSignal, computeSmartStops } from "@/lib/signal";
+import { insiderBuyingScore } from "@/lib/finnhub";
 import { UNIVERSE } from "@/lib/universe";
 
 export const maxDuration = 300;
@@ -46,7 +47,8 @@ async function run(req: Request) {
     if (!candles || candles.length < 20) { errors++; continue; }
 
     try {
-      const sig = computeSignal(candles);
+      const ibs = await insiderBuyingScore(tk).catch(() => null);
+      const sig = computeSignal(candles, { insiderBuyScore: ibs });
       if (!sig) { errors++; continue; }
       const stops = computeSmartStops(candles);
       const lastClose = candles[candles.length - 1].c;

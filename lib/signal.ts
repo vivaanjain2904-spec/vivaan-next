@@ -17,7 +17,15 @@ export type Signal = {
   recommendation: "BUY" | "HOLD" | "SELL";
 };
 
-export function computeSignal(candles: Candle[]): Signal | null {
+/**
+ * Optional hints from external data sources. Pass what you have — anything
+ * null/undefined is silently skipped so callers don't need to fetch all sources.
+ */
+export type SignalHints = {
+  insiderBuyScore?: number | null; // 0..1 from lib/finnhub insiderBuyingScore; >0.6 = bullish cluster
+};
+
+export function computeSignal(candles: Candle[], hints?: SignalHints): Signal | null {
   if (candles.length < 26) return null;  // need >= 26 days for MACD
   const closes = candles.map(c => c.c);
   const volumes = candles.map(c => c.v ?? 0);
@@ -57,6 +65,13 @@ export function computeSignal(candles: Candle[]): Signal | null {
   // Volume z-score: high vol on a down day = distribution = bearish
   if (volZ > 2 && momentum1m < 0) drop += 0.06;
   else if (volZ > 2 && momentum1m > 0) drop -= 0.04;  // high vol on up day = accumulation
+  // Insider buying signal (Form 4): cluster buying reduces drop probability
+  const ibs = hints?.insiderBuyScore;
+  if (ibs != null) {
+    if (ibs > 0.75)      drop -= 0.07;  // strong cluster buying
+    else if (ibs > 0.55) drop -= 0.03;  // mild net buying
+    else if (ibs < 0.25) drop += 0.04;  // net insider selling
+  }
   drop = Math.max(0, Math.min(1, drop));
 
   return {

@@ -11,7 +11,7 @@ export async function GET() {
     sql`SELECT cash, ml_alerts, ml_threshold, autonomous_mode, strategy FROM users WHERE id=${s.uid}`,
     sql`SELECT ticker, alert_above, alert_below, ml_alert
         FROM watchlist WHERE user_id=${s.uid} ORDER BY ticker`,
-    sql`SELECT ticker, drop_probability FROM ml_signals`,
+    sql`SELECT ticker, drop_probability FROM ml_signals WHERE updated_at > NOW() - INTERVAL '24 hours'`,
   ]);
   const positions = posR.rows;
   const watchlist = wlR.rows;
