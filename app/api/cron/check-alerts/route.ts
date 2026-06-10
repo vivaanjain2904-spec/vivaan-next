@@ -187,7 +187,12 @@ export async function GET(req: Request) {
       if (await transition(user.id, p.ticker, "ml_hold", !!mlHit)) {
         const title = `⚠️ ${p.ticker} ML sell signal`;
         const body  = `Drop probability ${(prob! * 100).toFixed(0)}% — at or above your ${(Number(user.ml_threshold) * 100).toFixed(0)}% threshold`;
-        const auto  = await tryAutoSell(user, p.ticker, Number(p.qty), px, "ml-signal");
+        // Alert at the user's threshold, but only auto-SELL on an extreme score:
+        // calibration showed dropProb 0.60–0.70 doesn't predict drops, and
+        // oversold names tend to bounce at 1-month horizons.
+        const auto  = prob! >= Math.max(Number(user.ml_threshold) || 0.65, 0.80)
+          ? await tryAutoSell(user, p.ticker, Number(p.qty), px, "ml-signal")
+          : null;
         await sql`INSERT INTO notifications (user_id, ticker, kind, title, body)
           VALUES (${user.id}, ${p.ticker}, 'ml_hold', ${title}, ${auto ? body + " · " + auto : body})`;
         sent.push({ title, body: auto ? body + " · " + auto : body }); total++;
