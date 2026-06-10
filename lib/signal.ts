@@ -66,6 +66,11 @@ export function computeSignal(candles: Candle[], hints?: SignalHints): Signal | 
   // Volume z-score: high vol on a down day = distribution = bearish
   if (volZ > 2 && momentum1m < 0) drop += 0.06;
   else if (volZ > 2 && momentum1m > 0) drop -= 0.04;  // high vol on up day = accumulation
+  // Mean-reversion bounce: deeply oversold AND today is already a reversal
+  // (close > prior close) AND volume confirms — distinct from the
+  // trend-following MACD/momentum factors, which fire on continuation.
+  const reversalDay = latest > closes[closes.length - 2];
+  if (rsi < 30 && reversalDay && volZ > 0.5) drop -= 0.06;
   // Insider buying signal (Form 4): cluster buying reduces drop probability
   const ibs = hints?.insiderBuyScore;
   if (ibs != null) {

@@ -87,6 +87,11 @@ From deep audit of `lib/signal.ts`, `lib/backtest.ts`, `lib/yfinance.ts`, etc:
   filter `ml_signals` with `WHERE updated_at > NOW() - interval '24 hours'`.
 - ~~Insider-buying clusters (SEC Form 4) + PEAD~~ — `lib/finnhub.ts`
   `insiderBuyingScore` / `peadScore`, wired into `computeSignal` hints.
+- ~~No VIX/volatility regime~~ — `computeVolRegime()` (SPY 10d vs 60d realized
+  vol) tightens entry thresholds in panic regimes, both auto-trade paths.
+- ~~No mean-reversion/bounce detector~~ — `computeSignal` now has an oversold
+  reversal-day + volume-confirmation factor (RSI<30, today's close > prior
+  close, volZ>0.5 → drop -= 0.06).
 
 **Critical — NOT yet implemented**
 - `dropProb` is a **heuristic, not a calibrated probability** (starts at 0.4, arbitrary
@@ -99,8 +104,6 @@ From deep audit of `lib/signal.ts`, `lib/backtest.ts`, `lib/yfinance.ts`, etc:
 - `lib/sentiment.ts` is a word-list scorer, **unvalidated**; -0.4 sell threshold is a guess
 - RSI cold-start returns neutral 50 for <15 bars (should return null) — low impact since
   `computeSignal` already requires >=26 bars before calling it
-- No VIX/volatility regime; thresholds constant across calm/panic markets
-- No mean-reversion/bounce detector (only momentum)
 - Potential survivorship bias in any large-universe backtest (delisted names vanish)
 
 ## Feature-truth audit
@@ -121,21 +124,15 @@ The batch signal pipeline (real Top Picks/Screener data, `getBarsBulk`,
 `refresh-signals` cron, insider/PEAD signals, stale-signal freshness check) is
 **done** — see "Done" above and the Feature Inventory below.
 
-Remaining high-value work, roughly in priority order:
+Remaining high-value work:
 
-1. **VIX/volatility-regime-aware thresholds** (Medium audit finding, well-scoped):
-   `computeMarketRegime` already classifies bull/bear/neutral from SPY's 50-day MA.
-   Extend with a volatility regime (e.g. SPY's recent realized volatility vs its own
-   trailing average, or ATR-based) and widen/tighten buy thresholds + stop distances
-   in calm vs panic markets. No new data source needed — SPY chart is already fetched.
-2. **Mean-reversion/bounce detector** (Medium): a short-term oversold-bounce signal
-   (e.g. RSI<25 + positive volume divergence) as a separate factor from the existing
-   momentum-only model.
-3. **Critical items (calibration, factor-weight validation)**: these need a
+1. **Critical items (calibration, factor-weight validation)**: need a
    walk-forward backtest harness comparing `dropProb` deciles to realized forward
    returns across the universe. `lib/backtest.ts` exists per-ticker; would need to
    be extended to run across `UNIVERSE` and aggregate — a bigger project, likely
    worth a dedicated session/plan.
+2. `lib/sentiment.ts` validation, RSI cold-start null-return, survivorship bias
+   in backtests — smaller Medium items, see audit findings above.
 
 ---
 
