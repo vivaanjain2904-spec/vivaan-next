@@ -17,8 +17,17 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "side must be BUY or SELL" }, { status: 400 });
 
   const quote = await getQuote(tk);
-  if (!quote || !quote.price) return NextResponse.json({ error: "No price" }, { status: 502 });
-  const price = quote.price;
+  let price = quote?.price;
+
+  // SELL of a position with no live quote (bad/untradeable ticker) falls
+  // back to its avg_cost so it can still be closed out — BUY still requires
+  // a real price.
+  if (!price && side === "SELL") {
+    const ex = await sql`SELECT avg_cost FROM positions WHERE user_id=${s.uid} AND ticker=${tk}`;
+    price = Number(ex.rows[0]?.avg_cost ?? 0) || undefined;
+  }
+
+  if (!price) return NextResponse.json({ error: "No price" }, { status: 502 });
 
   if (side === "BUY") {
     const cost = q * price;
