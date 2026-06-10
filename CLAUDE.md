@@ -23,6 +23,12 @@ autonomous trading bot. Deployed to Vercel, live at **vaelor.dev**.
 - Push with `git push -u origin claude/sharp-darwin-29quql`, then open a **draft PR**
 - GitHub repo scope for MCP tools: `vivaanjain2904-spec/vaelor`
 - Model identity must never appear in commits/PRs/code — chat only
+- **Multiple sessions can push to this branch.** Other (parallel/earlier) sessions
+  may have force-pushed new commits the local container doesn't have yet.
+  **At the start of any task that touches code** (and before assuming a feature
+  is "missing"), run `git fetch origin claude/sharp-darwin-29quql` and check
+  `git log HEAD..origin/claude/sharp-darwin-29quql` — if origin is ahead,
+  `git reset --hard origin/claude/sharp-darwin-29quql` before doing anything else.
 
 ## Owner preferences (important)
 
