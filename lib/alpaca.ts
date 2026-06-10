@@ -135,20 +135,22 @@ export async function alpacaPing(c: Creds): Promise<{ ok: boolean; account?: any
   }
 }
 
-/** Open (unfilled) BUY order quantity per ticker. Used to make broker sync idempotent before fills. */
-export async function alpacaOpenBuyQty(c: Creds): Promise<{ ok: boolean; pending?: Record<string, number>; error?: string }> {
+/** Open (unfilled) order quantity per ticker, split by side. Used to make broker sync idempotent before fills. */
+export async function alpacaOpenOrderQty(c: Creds): Promise<{ ok: boolean; pendingBuy?: Record<string, number>; pendingSell?: Record<string, number>; error?: string }> {
   try {
     const r = await fetch(`${base(c)}/v2/orders?status=open&limit=500`, { headers: headers(c) });
     const j = await r.json();
     if (!r.ok) return { ok: false, error: j.message ?? `HTTP ${r.status}` };
-    const pending: Record<string, number> = {};
+    const pendingBuy: Record<string, number> = {};
+    const pendingSell: Record<string, number> = {};
     for (const o of j) {
-      if (o.side !== "buy") continue;
       const sym = String(o.symbol).toUpperCase();
       const remaining = Number(o.qty ?? 0) - Number(o.filled_qty ?? 0);
-      if (remaining > 0) pending[sym] = (pending[sym] ?? 0) + remaining;
+      if (remaining <= 0) continue;
+      const target = o.side === "buy" ? pendingBuy : pendingSell;
+      target[sym] = (target[sym] ?? 0) + remaining;
     }
-    return { ok: true, pending };
+    return { ok: true, pendingBuy, pendingSell };
   } catch (e: any) {
     return { ok: false, error: String(e?.message ?? e) };
   }

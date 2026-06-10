@@ -87,6 +87,7 @@ export async function GET(req: Request) {
     if (!user.auto_trade) return null;
 
     let filledQty = qty; // paper: assume full fill
+    let fillPrice = price; // paper: book at the signal price
     let alpacaOrderId: string | undefined, alpacaErr: string | undefined;
     if (user.alpaca_key && user.alpaca_secret) {
       const r = await alpacaSell(
@@ -94,12 +95,14 @@ export async function GET(req: Request) {
       if (r.ok) {
         alpacaOrderId = r.orderId;
         if (r.filledQty && r.filledQty < qty) filledQty = r.filledQty;
+        // Mirror Alpaca's actual fill price so both ledgers record the same trade.
+        if (r.filledAvgPrice) fillPrice = r.filledAvgPrice;
       } else {
         alpacaErr = r.error;
       }
     }
 
-    // Mirror the sell in the local DB using the actual filled qty
+    // Mirror the sell in the local DB using the actual filled qty + price
     try {
       const remaining = qty - filledQty;
       if (remaining > 0.0001) {
@@ -107,9 +110,9 @@ export async function GET(req: Request) {
       } else {
         await sql`DELETE FROM positions WHERE user_id=${user.id} AND ticker=${ticker}`;
       }
-      await sql`UPDATE users SET cash = cash + ${filledQty * price} WHERE id=${user.id}`;
+      await sql`UPDATE users SET cash = cash + ${filledQty * fillPrice} WHERE id=${user.id}`;
       await sql`INSERT INTO trades (user_id, ticker, side, qty, price)
-        VALUES (${user.id}, ${ticker}, 'SELL', ${filledQty}, ${price})`;
+        VALUES (${user.id}, ${ticker}, 'SELL', ${filledQty}, ${fillPrice})`;
     } catch {}
 
     if (alpacaOrderId) return `🤖 Auto-sold ${filledQty} ${ticker} via Alpaca (${reason}). Order ${alpacaOrderId}`;
@@ -245,21 +248,28 @@ export async function GET(req: Request) {
         if (!(await transition(user.id, w.ticker, "ml_buy", true))) continue;
 
         let alpacaOrderId: string | undefined;
+        let fillQty = qty, fillPrice = q.price; // paper: book the planned fill
         if (user.alpaca_key && user.alpaca_secret) {
           const r = await alpacaBuy(
             { key: user.alpaca_key, secret: user.alpaca_secret, mode: user.alpaca_mode === "live" ? "live" : "paper" }, w.ticker, qty);
-          if (r.ok) alpacaOrderId = r.orderId;
+          if (r.ok) {
+            alpacaOrderId = r.orderId;
+            // Mirror Alpaca's actual fill qty/price so both ledgers record the same trade.
+            if (r.filledQty) fillQty = r.filledQty;
+            if (r.filledAvgPrice) fillPrice = r.filledAvgPrice;
+          }
         }
+        const fillCost = fillQty * fillPrice;
         try {
           await sql`INSERT INTO positions (user_id, ticker, qty, avg_cost, stop_loss, take_profit)
-            VALUES (${user.id}, ${w.ticker}, ${qty}, ${q.price}, 0.05, 0.10)
+            VALUES (${user.id}, ${w.ticker}, ${fillQty}, ${fillPrice}, 0.05, 0.10)
             ON CONFLICT (user_id, ticker) DO UPDATE SET
-              qty = positions.qty + ${qty},
-              avg_cost = (positions.qty * positions.avg_cost + ${cost}) / (positions.qty + ${qty})`;
-          await sql`UPDATE users SET cash = cash - ${cost} WHERE id=${user.id}`;
+              qty = positions.qty + ${fillQty},
+              avg_cost = (positions.qty * positions.avg_cost + ${fillCost}) / (positions.qty + ${fillQty})`;
+          await sql`UPDATE users SET cash = cash - ${fillCost} WHERE id=${user.id}`;
           await sql`INSERT INTO trades (user_id, ticker, side, qty, price)
-            VALUES (${user.id}, ${w.ticker}, 'BUY', ${qty}, ${q.price})`;
-          cash -= cost;
+            VALUES (${user.id}, ${w.ticker}, 'BUY', ${fillQty}, ${fillPrice})`;
+          cash -= fillCost;
         } catch {}
         const title = `🤖 Auto-bought ${qty} ${w.ticker}`;
         const body  = `ML drop-prob ${(prob*100).toFixed(0)}% — strong buy.` +

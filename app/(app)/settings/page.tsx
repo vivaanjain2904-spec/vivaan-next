@@ -95,10 +95,13 @@ export default function SettingsPage() {
     const j = await r.json();
     setPingRes(j);
   }
-  async function syncAlpaca() {
-    if (!confirm("Mirror your Vaelor positions onto Alpaca? This places paper buy orders for any shares Alpaca is missing. Safe to re-run.")) return;
+  async function syncAlpaca(mirror: boolean) {
+    const msg = mirror
+      ? "FULL MIRROR SYNC: this will SELL any Alpaca position (or excess shares) not in your Vaelor portfolio, AND buy whatever's missing — so Alpaca ends up holding exactly the same tickers/share-counts as Vaelor. This can sell large unrelated holdings on this Alpaca account. Continue?"
+      : "Mirror your Vaelor positions onto Alpaca? This places paper buy orders for any shares Alpaca is missing. Safe to re-run.";
+    if (!confirm(msg)) return;
     setSyncRes({ loading: true });
-    const r = await fetch("/api/admin/sync-alpaca", { method: "POST" });
+    const r = await fetch(`/api/admin/sync-alpaca${mirror ? "?mirror=1" : ""}`, { method: "POST" });
     const j = await r.json().catch(() => ({ error: "request failed" }));
     setSyncRes(j);
   }
@@ -243,7 +246,10 @@ export default function SettingsPage() {
             <button onClick={pingAlpaca} className="btn-ghost text-[12px]">🔌 Test Alpaca</button>
           )}
           {(user.alpaca_key && user.alpaca_secret) && (
-            <button onClick={syncAlpaca} className="btn-ghost text-[12px]">🔄 Sync Positions to Alpaca</button>
+            <button onClick={() => syncAlpaca(false)} className="btn-ghost text-[12px]">🔄 Sync Positions to Alpaca</button>
+          )}
+          {(user.alpaca_key && user.alpaca_secret) && (
+            <button onClick={() => syncAlpaca(true)} className="btn-ghost text-[12px] text-amber">⚠️ Full Mirror Sync (sells extras)</button>
           )}
           <button onClick={testNotify} className="btn-ghost text-[12px]">📨 Test Notification</button>
           <span className="text-muted text-[11px]">Verifies Alpaca connection and that alerts reach your inbox.</span>
@@ -253,9 +259,9 @@ export default function SettingsPage() {
             {syncRes.loading ? "Placing orders on Alpaca — this can take a minute…"
               : syncRes.error ? `✗ ${syncRes.error}`
               : `✓ Sync complete — ${syncRes.placed ?? 0} orders placed, ${syncRes.failed ?? 0} failed (of ${syncRes.total ?? 0}). Orders fill at next market open.`}
-            {Array.isArray(syncRes.results) && syncRes.results.filter((r: any) => !r.ok).map((r: any) => (
-              <div key={r.ticker} className="mt-1 text-red">
-                ✗ {r.ticker} ×{r.qty}: {r.error ?? r.status ?? "unknown error"}
+            {Array.isArray(syncRes.results) && syncRes.results.filter((r: any) => !r.ok).map((r: any, i: number) => (
+              <div key={i} className="mt-1 text-red">
+                ✗ {r.ticker} {r.side ?? "buy"} ×{r.qty}: {r.error ?? r.status ?? "unknown error"}
               </div>
             ))}
           </div>

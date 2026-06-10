@@ -224,31 +224,36 @@ export async function POST() {
         const qty = timeHit && !stopHit && !tgtHit && !mlHit && !newsHit
           ? Math.max(1, Math.floor(Number(p.qty) * 0.25))
           : Number(p.qty);
-        const proceeds = qty * px;
-
         // Alpaca leg
         let alpacaOrderId: string | undefined;
+        let fillQty = qty, fillPrice = px; // paper: book the planned fill
         if (user.alpaca_key && user.alpaca_secret) {
           const r = await alpacaSell({ key: user.alpaca_key, secret: user.alpaca_secret, mode: user.alpaca_mode === "live" ? "live" : "paper" }, p.ticker, qty);
-          if (r.ok) alpacaOrderId = r.orderId;
+          if (r.ok) {
+            alpacaOrderId = r.orderId;
+            // Mirror Alpaca's actual fill qty/price so both ledgers record the same trade.
+            if (r.filledQty) fillQty = r.filledQty;
+            if (r.filledAvgPrice) fillPrice = r.filledAvgPrice;
+          }
         }
+        const proceeds = fillQty * fillPrice;
 
         // Mirror paper
-        const isPartial = timeHit && !stopHit && !tgtHit && !mlHit && !newsHit;
+        const isPartial = (timeHit && !stopHit && !tgtHit && !mlHit && !newsHit) || fillQty < Number(p.qty);
         try {
           if (isPartial) {
-            const newQty = Number(p.qty) - qty;
+            const newQty = Number(p.qty) - fillQty;
             await sql`UPDATE positions SET qty=${newQty} WHERE user_id=${user.id} AND ticker=${p.ticker}`;
           } else {
             await sql`DELETE FROM positions WHERE user_id=${user.id} AND ticker=${p.ticker}`;
           }
           await sql`UPDATE users SET cash = cash + ${proceeds} WHERE id=${user.id}`;
           await sql`INSERT INTO trades (user_id, ticker, side, qty, price)
-            VALUES (${user.id}, ${p.ticker}, 'SELL', ${qty}, ${px})`;
+            VALUES (${user.id}, ${p.ticker}, 'SELL', ${fillQty}, ${fillPrice})`;
           cashChange += proceeds;
         } catch {}
 
-        sellOrders.push({ ticker: p.ticker, qty, price: px, reason,
+        sellOrders.push({ ticker: p.ticker, qty: fillQty, price: fillPrice, reason,
                           mode: alpacaOrderId ? "alpaca" : "paper", orderId: alpacaOrderId });
 
         const title = stopHit ? `🔴 Auto-sold ${p.ticker} (stop)` :
@@ -256,7 +261,7 @@ export async function POST() {
                       mlHit  ? `⚠️ Auto-sold ${p.ticker} (ML)` :
                       timeHit ? `⏱️ Auto-trimmed ${p.ticker} 25% (time-exit)` :
                                `📰 Auto-sold ${p.ticker} (negative news${newsScore != null ? ` ${newsScore.toFixed(2)}` : ""})`;
-        const body = `${qty} shares @ $${px.toFixed(2)} · ${reason}` +
+        const body = `${fillQty} shares @ $${fillPrice.toFixed(2)} · ${reason}` +
           (alpacaOrderId ? ` · Alpaca order ${alpacaOrderId}` : " · paper");
         await sql`INSERT INTO notifications (user_id, ticker, kind, title, body)
           VALUES (${user.id}, ${p.ticker}, 'auto_sell', ${title}, ${body})`;
@@ -307,15 +312,26 @@ export async function POST() {
       if (coreEnabled && p.ticker === coreTicker) continue;   // keep the core
       const px = heldQuotes[p.ticker]?.price ?? Number(p.avg_cost);
       const qty = Number(p.qty);
-      const proceeds = qty * px;
+      let fillQty = qty, fillPrice = px; // paper: book the planned fill
       if (user.alpaca_key && user.alpaca_secret) {
-        try { await alpacaSell({ key: user.alpaca_key, secret: user.alpaca_secret, mode: user.alpaca_mode === "live" ? "live" : "paper" }, p.ticker, qty); } catch {}
+        try {
+          const r = await alpacaSell({ key: user.alpaca_key, secret: user.alpaca_secret, mode: user.alpaca_mode === "live" ? "live" : "paper" }, p.ticker, qty);
+          if (r.ok) {
+            if (r.filledQty) fillQty = r.filledQty;
+            if (r.filledAvgPrice) fillPrice = r.filledAvgPrice;
+          }
+        } catch {}
       }
+      const proceeds = fillQty * fillPrice;
       try {
-        await sql`DELETE FROM positions WHERE user_id=${user.id} AND ticker=${p.ticker}`;
+        if (fillQty < qty) {
+          await sql`UPDATE positions SET qty=${qty - fillQty} WHERE user_id=${user.id} AND ticker=${p.ticker}`;
+        } else {
+          await sql`DELETE FROM positions WHERE user_id=${user.id} AND ticker=${p.ticker}`;
+        }
         await sql`UPDATE users SET cash = cash + ${proceeds} WHERE id=${user.id}`;
-        await sql`INSERT INTO trades (user_id, ticker, side, qty, price) VALUES (${user.id}, ${p.ticker}, 'SELL', ${qty}, ${px})`;
-        liq.push({ ticker: p.ticker, qty, price: px });
+        await sql`INSERT INTO trades (user_id, ticker, side, qty, price) VALUES (${user.id}, ${p.ticker}, 'SELL', ${fillQty}, ${fillPrice})`;
+        liq.push({ ticker: p.ticker, qty: fillQty, price: fillPrice });
       } catch {}
     }
     const cooldownDays = 7;
@@ -350,18 +366,25 @@ export async function POST() {
         if (cpx && cpx > 0) {
           const qty = Math.floor(Math.min(shortfall, cash) / cpx);
           if (qty >= 1) {
-            const cost = qty * cpx;
+            let fillQty = qty, fillPrice = cpx; // paper: book the planned fill
             if (user.alpaca_key && user.alpaca_secret) {
-              try { await alpacaBuy({ key: user.alpaca_key, secret: user.alpaca_secret, mode: user.alpaca_mode === "live" ? "live" : "paper" }, coreTicker, qty); } catch {}
+              try {
+                const r = await alpacaBuy({ key: user.alpaca_key, secret: user.alpaca_secret, mode: user.alpaca_mode === "live" ? "live" : "paper" }, coreTicker, qty);
+                if (r.ok) {
+                  if (r.filledQty) fillQty = r.filledQty;
+                  if (r.filledAvgPrice) fillPrice = r.filledAvgPrice;
+                }
+              } catch {}
             }
-            const newQty = (corePos ? Number(corePos.qty) : 0) + qty;
-            const newAvg = corePos ? ((Number(corePos.qty) * Number(corePos.avg_cost)) + cost) / newQty : cpx;
-            await sql`INSERT INTO positions (user_id, ticker, qty, avg_cost) VALUES (${user.id}, ${coreTicker}, ${qty}, ${cpx})
+            const cost = fillQty * fillPrice;
+            const newQty = (corePos ? Number(corePos.qty) : 0) + fillQty;
+            const newAvg = corePos ? ((Number(corePos.qty) * Number(corePos.avg_cost)) + cost) / newQty : fillPrice;
+            await sql`INSERT INTO positions (user_id, ticker, qty, avg_cost) VALUES (${user.id}, ${coreTicker}, ${fillQty}, ${fillPrice})
               ON CONFLICT (user_id, ticker) DO UPDATE SET qty=${newQty}, avg_cost=${newAvg}`;
             await sql`UPDATE users SET cash = cash - ${cost} WHERE id=${user.id}`;
-            await sql`INSERT INTO trades (user_id, ticker, side, qty, price) VALUES (${user.id}, ${coreTicker}, 'BUY', ${qty}, ${cpx})`;
+            await sql`INSERT INTO trades (user_id, ticker, side, qty, price) VALUES (${user.id}, ${coreTicker}, 'BUY', ${fillQty}, ${fillPrice})`;
             cash -= cost;
-            coreNote = `Bought ${qty} ${coreTicker} core ($${cost.toFixed(0)})`;
+            coreNote = `Bought ${fillQty} ${coreTicker} core ($${cost.toFixed(0)})`;
           }
         }
       } catch {}
@@ -547,22 +570,29 @@ export async function POST() {
 
     // Optional Alpaca leg
     let alpacaOrderId: string | undefined, alpacaErr: string | undefined;
+    let fillQty = qty, fillPrice = pick.price; // paper: book the planned fill
     if (user.alpaca_key && user.alpaca_secret) {
       const r = await alpacaBuy(
         { key: user.alpaca_key, secret: user.alpaca_secret, mode: user.alpaca_mode === "live" ? "live" : "paper" }, pick.ticker, qty);
-      if (r.ok) alpacaOrderId = r.orderId; else alpacaErr = r.error;
+      if (r.ok) {
+        alpacaOrderId = r.orderId;
+        // Mirror Alpaca's actual fill qty/price so both ledgers record the same trade.
+        if (r.filledQty) fillQty = r.filledQty;
+        if (r.filledAvgPrice) fillPrice = r.filledAvgPrice;
+      } else alpacaErr = r.error;
     }
+    const fillCost = fillQty * fillPrice;
 
     try {
       await sql`INSERT INTO positions (user_id, ticker, qty, avg_cost, stop_loss, take_profit)
-        VALUES (${user.id}, ${pick.ticker}, ${qty}, ${pick.price}, ${sl}, ${tp})
+        VALUES (${user.id}, ${pick.ticker}, ${fillQty}, ${fillPrice}, ${sl}, ${tp})
         ON CONFLICT (user_id, ticker) DO UPDATE SET
-          qty = positions.qty + ${qty},
-          avg_cost = (positions.qty * positions.avg_cost + ${cost}) / (positions.qty + ${qty})`;
-      await sql`UPDATE users SET cash = cash - ${cost} WHERE id=${user.id}`;
+          qty = positions.qty + ${fillQty},
+          avg_cost = (positions.qty * positions.avg_cost + ${fillCost}) / (positions.qty + ${fillQty})`;
+      await sql`UPDATE users SET cash = cash - ${fillCost} WHERE id=${user.id}`;
       await sql`INSERT INTO trades (user_id, ticker, side, qty, price)
-        VALUES (${user.id}, ${pick.ticker}, 'BUY', ${qty}, ${pick.price})`;
-      remainingCash -= cost;
+        VALUES (${user.id}, ${pick.ticker}, 'BUY', ${fillQty}, ${fillPrice})`;
+      remainingCash -= fillCost;
     } catch (e: any) {
       orders.push({ ticker: pick.ticker, ok: false, error: e?.message ?? "DB error" });
       continue;
@@ -571,15 +601,15 @@ export async function POST() {
     boughtSectors.add(sector);
 
     orders.push({
-      ticker: pick.ticker, ok: true, qty, price: pick.price,
-      cost, dropProb: pick.dropProb,
+      ticker: pick.ticker, ok: true, qty: fillQty, price: fillPrice,
+      cost: fillCost, dropProb: pick.dropProb,
       mode: alpacaOrderId ? "alpaca" : (alpacaErr ? "paper-only" : "paper"),
       orderId: alpacaOrderId,
     });
 
-    const title = `🤖 Auto-discovered ${qty} ${pick.ticker}`;
+    const title = `🤖 Auto-discovered ${fillQty} ${pick.ticker}`;
     const body = `Signal ${(pick.dropProb * 100).toFixed(0)}% drop-prob (strong buy).` +
-      ` Cost $${cost.toFixed(2)}. Smart stops: −${(sl * 100).toFixed(1)}% / +${(tp * 100).toFixed(1)}%.` +
+      ` Cost $${fillCost.toFixed(2)}. Smart stops: −${(sl * 100).toFixed(1)}% / +${(tp * 100).toFixed(1)}%.` +
       (alpacaOrderId ? ` Alpaca order ${alpacaOrderId}.` : " (paper-only).");
     await sql`INSERT INTO notifications (user_id, ticker, kind, title, body)
       VALUES (${user.id}, ${pick.ticker}, 'auto_discover', ${title}, ${body})`;
