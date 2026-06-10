@@ -66,6 +66,11 @@ export function computeSignal(candles: Candle[], hints?: SignalHints): Signal | 
   // Volume z-score: high vol on a down day = distribution = bearish
   if (volZ > 2 && momentum1m < 0) drop += 0.06;
   else if (volZ > 2 && momentum1m > 0) drop -= 0.04;  // high vol on up day = accumulation
+  // Mean-reversion bounce: deeply oversold AND today is already a reversal
+  // (close > prior close) AND volume confirms — distinct from the
+  // trend-following MACD/momentum factors, which fire on continuation.
+  const reversalDay = latest > closes[closes.length - 2];
+  if (rsi < 30 && reversalDay && volZ > 0.5) drop -= 0.06;
   // Insider buying signal (Form 4): cluster buying reduces drop probability
   const ibs = hints?.insiderBuyScore;
   if (ibs != null) {
@@ -256,6 +261,30 @@ export function computeMarketRegime(candles: Candle[]): "bull" | "bear" | "neutr
   if (last < ma50) return "bear";
   if (last >= ma50 && ma50 >= ma50Prior) return "bull";
   return "neutral";
+}
+
+/**
+ * Volatility regime from a price series (typically SPY) — realized volatility
+ * over the last 10 days vs its own 60-day baseline. Turbulent markets warrant
+ * a higher conviction bar before entering new positions; unusually calm
+ * markets can tolerate slightly more.
+ */
+export function computeVolRegime(candles: Candle[]): "calm" | "normal" | "panic" {
+  if (candles.length < 65) return "normal";
+  const closes = candles.map(c => c.c);
+  const rets: number[] = [];
+  for (let i = 1; i < closes.length; i++) rets.push(Math.log(closes[i] / closes[i - 1]));
+  const stdev = (arr: number[]) => {
+    const m = avg(arr);
+    return Math.sqrt(avg(arr.map(x => (x - m) ** 2)));
+  };
+  const recent = stdev(rets.slice(-10));
+  const baseline = stdev(rets.slice(-60));
+  if (baseline <= 0) return "normal";
+  const ratio = recent / baseline;
+  if (ratio > 1.5) return "panic";
+  if (ratio < 0.7) return "calm";
+  return "normal";
 }
 
 /**

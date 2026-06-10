@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { sql, initDb } from "@/lib/db";
 import { getQuotes, getChart, daysUntilEarnings } from "@/lib/yfinance";
-import { computeSignal, computeMarketRegime, computeSmartStops, sizingMultiplier } from "@/lib/signal";
+import { computeSignal, computeMarketRegime, computeVolRegime, computeSmartStops, sizingMultiplier } from "@/lib/signal";
 import { alertUser } from "@/lib/ntfy";
 import { alpacaBuy } from "@/lib/alpaca";
 
@@ -94,14 +94,16 @@ export async function GET(req: Request) {
 
   // Bear-regime check happens ONCE per cron tick — share across users
   let regime: "bull" | "bear" | "neutral" = "neutral";
+  let volRegime: "calm" | "normal" | "panic" = "normal";
   try {
     const spy = await getChart("SPY", "6mo");
     regime = computeMarketRegime(spy);
+    volRegime = computeVolRegime(spy);
   } catch {}
 
   if (regime === "bear") {
     return NextResponse.json({
-      ok: true, regime, users: usersR.rows.length,
+      ok: true, regime, volRegime, users: usersR.rows.length,
       msg: "SPY in bear regime — no new buys for any user.",
     });
   }
@@ -109,7 +111,7 @@ export async function GET(req: Request) {
   const summary: any[] = [];
   for (const user of usersR.rows) {
     try {
-      const res = await runForUser(user as any);
+      const res = await runForUser(user as any, volRegime);
       summary.push({ userId: user.id, ...res });
     } catch (e: any) {
       summary.push({ userId: user.id, error: e?.message ?? "unknown error" });
@@ -117,12 +119,12 @@ export async function GET(req: Request) {
   }
 
   return NextResponse.json({
-    ok: true, regime, users: usersR.rows.length, summary,
+    ok: true, regime, volRegime, users: usersR.rows.length, summary,
     ts: new Date().toISOString(),
   });
 }
 
-async function runForUser(user: any): Promise<any> {
+async function runForUser(user: any, volRegime: "calm" | "normal" | "panic" = "normal"): Promise<any> {
   const pos = await sql`SELECT ticker FROM positions WHERE user_id=${user.id} AND qty > 0`;
   const positionRows = await sql`SELECT ticker, qty, avg_cost FROM positions WHERE user_id=${user.id} AND qty > 0`;
   const heldSet = new Set(pos.rows.map((p: any) => p.ticker));
@@ -160,8 +162,10 @@ async function runForUser(user: any): Promise<any> {
     if (!candles) return null;
     const sig = computeSignal(candles);
     if (!sig) return null;
-    // Skip stocks where the model is bearish (drop prob > 0.55 = avoid)
-    if (sig.dropProb > 0.55) return null;
+    // Skip stocks where the model is bearish (drop prob > 0.55 = avoid).
+    // Demand more conviction when SPY is in a volatility-panic regime.
+    const bearishCutoff = volRegime === "panic" ? 0.40 : 0.55;
+    if (sig.dropProb > bearishCutoff) return null;
     const smart = computeSmartStops(candles) ?? undefined;
     const daysToER = await withTimeout(daysUntilEarnings(c.ticker), 2000);
     if (daysToER != null && daysToER >= 0 && daysToER <= 14) return null;
@@ -199,12 +203,16 @@ async function runForUser(user: any): Promise<any> {
     const sl = pick.smart?.stop_loss ?? 0.05;
     const tp = pick.smart?.take_profit ?? 0.10;
 
-    let alpacaOrderId: string | undefined;
+    let alpacaOrderId: string | undefined, alpacaPending = false;
     let fillQty = qty, fillPrice = pick.price; // paper: book the planned fill
     if (user.alpaca_key && user.alpaca_secret) {
       const r = await alpacaBuy({ key: user.alpaca_key, secret: user.alpaca_secret, mode: user.alpaca_mode === "live" ? "live" : "paper" }, pick.ticker, qty);
-      if (r.ok) {
+      // An accepted-but-unfilled order (status "new") still has a real orderId —
+      // track it so it isn't reported as paper-only when Alpaca actually has it.
+      const submitted = !!r.orderId && !["rejected", "canceled", "expired"].includes(String(r.status));
+      if (submitted) {
         alpacaOrderId = r.orderId;
+        alpacaPending = !r.ok;
         // Mirror Alpaca's actual fill qty/price so both ledgers record the same trade.
         if (r.filledQty) fillQty = r.filledQty;
         if (r.filledAvgPrice) fillPrice = r.filledAvgPrice;
@@ -232,7 +240,7 @@ async function runForUser(user: any): Promise<any> {
     const title = `🤖 Auto-discovered ${qty} ${pick.ticker}`;
     const body = `Signal ${(pick.dropProb * 100).toFixed(0)}% drop-prob. Cost $${fillCost.toFixed(2)}.` +
       ` Smart stops: −${(sl*100).toFixed(1)}% / +${(tp*100).toFixed(1)}%.` +
-      (alpacaOrderId ? ` Alpaca order ${alpacaOrderId}.` : "");
+      (alpacaOrderId ? ` Alpaca order ${alpacaOrderId}${alpacaPending ? " (pending fill)" : ""}.` : "");
     await sql`INSERT INTO notifications (user_id, ticker, kind, title, body)
       VALUES (${user.id}, ${pick.ticker}, 'auto_discover', ${title}, ${body})`;
     await alertUser(user as any, title, body);
