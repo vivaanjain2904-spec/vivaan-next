@@ -134,9 +134,15 @@ export type Candle = { t: number; o: number; h: number; l: number; c: number; v:
  * are missing or the request fails — callers should handle empty arrays.
  * Automatically paginates via next_page_token and batches in chunks of 100.
  */
-export async function getBarsBulk(tickers: string[], days = 90): Promise<Record<string, Candle[]>> {
-  const key = process.env.ALPACA_DATA_KEY || process.env.ALPACA_KEY;
-  const secret = process.env.ALPACA_DATA_SECRET || process.env.ALPACA_SECRET;
+export async function getBarsBulk(
+  tickers: string[],
+  days = 90,
+  creds?: { key: string; secret: string },
+): Promise<Record<string, Candle[]>> {
+  // Platform env keys first; caller-supplied creds are a fallback for
+  // deployments where the env vars aren't configured.
+  const key = process.env.ALPACA_DATA_KEY || process.env.ALPACA_KEY || creds?.key;
+  const secret = process.env.ALPACA_DATA_SECRET || process.env.ALPACA_SECRET || creds?.secret;
   if (!key || !secret || !tickers.length) return {};
 
   const start = new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
