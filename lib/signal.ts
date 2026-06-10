@@ -259,6 +259,30 @@ export function computeMarketRegime(candles: Candle[]): "bull" | "bear" | "neutr
 }
 
 /**
+ * Volatility regime from a price series (typically SPY) — realized volatility
+ * over the last 10 days vs its own 60-day baseline. Turbulent markets warrant
+ * a higher conviction bar before entering new positions; unusually calm
+ * markets can tolerate slightly more.
+ */
+export function computeVolRegime(candles: Candle[]): "calm" | "normal" | "panic" {
+  if (candles.length < 65) return "normal";
+  const closes = candles.map(c => c.c);
+  const rets: number[] = [];
+  for (let i = 1; i < closes.length; i++) rets.push(Math.log(closes[i] / closes[i - 1]));
+  const stdev = (arr: number[]) => {
+    const m = avg(arr);
+    return Math.sqrt(avg(arr.map(x => (x - m) ** 2)));
+  };
+  const recent = stdev(rets.slice(-10));
+  const baseline = stdev(rets.slice(-60));
+  if (baseline <= 0) return "normal";
+  const ratio = recent / baseline;
+  if (ratio > 1.5) return "panic";
+  if (ratio < 0.7) return "calm";
+  return "normal";
+}
+
+/**
  * Ratchet logic for trailing stops. Given the current stop_loss fraction
  * and the current unrealized P&L % (as a 0..1 fraction), return the
  * recommended new stop_loss. NEVER widens — only tightens.

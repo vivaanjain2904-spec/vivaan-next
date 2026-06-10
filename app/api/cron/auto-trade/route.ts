@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { sql, initDb } from "@/lib/db";
 import { getQuotes, getChart, daysUntilEarnings } from "@/lib/yfinance";
-import { computeSignal, computeMarketRegime, computeSmartStops, sizingMultiplier } from "@/lib/signal";
+import { computeSignal, computeMarketRegime, computeVolRegime, computeSmartStops, sizingMultiplier } from "@/lib/signal";
 import { alertUser } from "@/lib/ntfy";
 import { alpacaBuy } from "@/lib/alpaca";
 
@@ -94,14 +94,16 @@ export async function GET(req: Request) {
 
   // Bear-regime check happens ONCE per cron tick — share across users
   let regime: "bull" | "bear" | "neutral" = "neutral";
+  let volRegime: "calm" | "normal" | "panic" = "normal";
   try {
     const spy = await getChart("SPY", "6mo");
     regime = computeMarketRegime(spy);
+    volRegime = computeVolRegime(spy);
   } catch {}
 
   if (regime === "bear") {
     return NextResponse.json({
-      ok: true, regime, users: usersR.rows.length,
+      ok: true, regime, volRegime, users: usersR.rows.length,
       msg: "SPY in bear regime — no new buys for any user.",
     });
   }
@@ -109,7 +111,7 @@ export async function GET(req: Request) {
   const summary: any[] = [];
   for (const user of usersR.rows) {
     try {
-      const res = await runForUser(user as any);
+      const res = await runForUser(user as any, volRegime);
       summary.push({ userId: user.id, ...res });
     } catch (e: any) {
       summary.push({ userId: user.id, error: e?.message ?? "unknown error" });
@@ -117,12 +119,12 @@ export async function GET(req: Request) {
   }
 
   return NextResponse.json({
-    ok: true, regime, users: usersR.rows.length, summary,
+    ok: true, regime, volRegime, users: usersR.rows.length, summary,
     ts: new Date().toISOString(),
   });
 }
 
-async function runForUser(user: any): Promise<any> {
+async function runForUser(user: any, volRegime: "calm" | "normal" | "panic" = "normal"): Promise<any> {
   const pos = await sql`SELECT ticker FROM positions WHERE user_id=${user.id} AND qty > 0`;
   const positionRows = await sql`SELECT ticker, qty, avg_cost FROM positions WHERE user_id=${user.id} AND qty > 0`;
   const heldSet = new Set(pos.rows.map((p: any) => p.ticker));
@@ -160,8 +162,10 @@ async function runForUser(user: any): Promise<any> {
     if (!candles) return null;
     const sig = computeSignal(candles);
     if (!sig) return null;
-    // Skip stocks where the model is bearish (drop prob > 0.55 = avoid)
-    if (sig.dropProb > 0.55) return null;
+    // Skip stocks where the model is bearish (drop prob > 0.55 = avoid).
+    // Demand more conviction when SPY is in a volatility-panic regime.
+    const bearishCutoff = volRegime === "panic" ? 0.40 : 0.55;
+    if (sig.dropProb > bearishCutoff) return null;
     const smart = computeSmartStops(candles) ?? undefined;
     const daysToER = await withTimeout(daysUntilEarnings(c.ticker), 2000);
     if (daysToER != null && daysToER >= 0 && daysToER <= 14) return null;

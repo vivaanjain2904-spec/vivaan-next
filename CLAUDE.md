@@ -60,6 +60,13 @@ autonomous trading bot. Deployed to Vercel, live at **vaelor.dev**.
 - **NaN signals**: Python-override tickers return `0` not `NaN` for rsi/momentum
 - **Screener route**: removed `revalidate=300` that conflicted with `force-dynamic`
 
+### PR #16 (open, draft) — `b950701` — pending-order tracking
+- Auto-trade buy/sell sites now capture `alpacaOrderId` for accepted-but-unfilled
+  orders (status "new"), not just immediate fills — surfaced as "(pending fill)"
+  in notifications. Sites: `cron/check-alerts` (sell + watchlist buy),
+  `cron/auto-trade` (discovery buy), `auto-trade/run` (stop/target/ML/time-exit
+  sell, new-pick buy).
+
 ### PR #2 (merged) — `db662dd` — max-profit improvements
 - **Earnings filter 3 → 14 days** (auto-trade/run + cron/auto-trade)
 - **Sector cap**: `SECTOR` map + `boughtSectors` set — max 1 buy per sector per cycle
@@ -71,72 +78,64 @@ autonomous trading bot. Deployed to Vercel, live at **vaelor.dev**.
 
 ---
 
-## Model audit findings (NOT yet implemented)
+## Model audit findings
 
 From deep audit of `lib/signal.ts`, `lib/backtest.ts`, `lib/yfinance.ts`, etc:
 
-**Critical**
+**Done**
+- ~~Stale ML signal freshness check~~ — `auto-trade/run` and `cron/check-alerts` now
+  filter `ml_signals` with `WHERE updated_at > NOW() - interval '24 hours'`.
+- ~~Insider-buying clusters (SEC Form 4) + PEAD~~ — `lib/finnhub.ts`
+  `insiderBuyingScore` / `peadScore`, wired into `computeSignal` hints.
+
+**Critical — NOT yet implemented**
 - `dropProb` is a **heuristic, not a calibrated probability** (starts at 0.4, arbitrary
   point additions). Buy ≤0.35 / sell ≥0.65 thresholds are guesses. Needs decile
   calibration against realized forward returns.
-- **Stale ML signal**: auto-trade reads `ml_signals` with **no freshness check** — uses
-  week-old Python scores as if fresh. Fix: `WHERE updated_at > NOW() - interval '24h'`.
 - **Factor weights all hardcoded** (RSI ±0.22, MACD ±0.08, etc.) — never validated.
   Needs walk-forward optimization.
 
-**Medium**
+**Medium — NOT yet implemented**
 - `lib/sentiment.ts` is a word-list scorer, **unvalidated**; -0.4 sell threshold is a guess
-- RSI cold-start returns neutral 50 for <15 bars (should return null)
+- RSI cold-start returns neutral 50 for <15 bars (should return null) — low impact since
+  `computeSignal` already requires >=26 bars before calling it
 - No VIX/volatility regime; thresholds constant across calm/panic markets
 - No mean-reversion/bounce detector (only momentum)
 - Potential survivorship bias in any large-universe backtest (delisted names vanish)
 
-## Feature-truth audit (the disconnect to fix)
+## Feature-truth audit
 
 - **Trade tab "Recommended Setup"** (`api/recommend/[ticker]` → `computeRecommendation`):
   GOOD — real ATR stops, shows real $ prices, "Apply Recommendation" works.
-- **Top Picks** (`app/(app)/screener/page.tsx:83-126`): **OVERSELLS.** UI claims
-  "multi-factor RSI·MACD·Bollinger·Volume·MA·momentum, ATR-based stops" but actually
-  uses hardcoded `rsi:50`, `momentum_1m:0`, fixed `sl=0.05/tp=0.10`, and ranks only by
-  52-week-range position + day %. The fake was introduced to dodge Yahoo rate limits.
-- **Screener "Buy ≤ / Sell @"** (`screener/page.tsx:454-458`): "Buy ≤" is a made-up
-  `price × (1 - stop_loss × 0.5)`, not a real entry signal.
+- **Top Picks** (`app/(app)/screener/page.tsx`): FIXED — now sourced from `ml_signals`
+  (real rsi/momentum_1m/ATR stops via the batch `refresh-signals` pipeline), falling
+  back to live per-ticker compute only when no `ml_signals` row exists.
+- **Screener "Buy ≤ / Sell @"**: FIXED — uses real ATR stops from `ml_signals` when
+  present, falling back to per-ticker smart-stops fetch.
 
 ---
 
-## NEXT TASK (paused mid-design — pick up here)
+## NEXT TASK (pick up here)
 
-**Build a server-side batch signal pipeline so Top Picks + Screener use REAL data.**
-Root cause of all the fakery: there's no batch that computes the real signal for the
-whole universe, so the UI fakes it (Top Picks) or fetches 1-at-a-time and rate-limits.
+The batch signal pipeline (real Top Picks/Screener data, `getBarsBulk`,
+`refresh-signals` cron, insider/PEAD signals, stale-signal freshness check) is
+**done** — see "Done" above and the Feature Inventory below.
 
-Plan agreed with owner:
-1. **Add `getBarsBulk(tickers, days)` to `lib/yfinance.ts`** using Alpaca's free
-   multi-symbol bars endpoint `GET https://data.alpaca.markets/v2/stocks/bars?symbols=A,B,C&timeframe=1Day&start=...&feed=iex`
-   (paginate via `page_token`). This replaces per-ticker Yahoo `getChart` for batch jobs.
-2. **Extend `ml_signals` table** (in `lib/db.ts` initDb, use `ADD COLUMN IF NOT EXISTS`):
-   add `stop_loss`, `take_profit`, `momentum_1m`, `source TEXT` ('py' | 'live').
-3. **New endpoint `app/api/refresh-signals/route.ts`** (CRON_SECRET-protected, same
-   deny-by-default pattern as other crons; also allow logged-in manual trigger):
-   - load `UNIVERSE` (lib/universe.ts, ~546 tickers)
-   - bulk-fetch daily bars via `getBarsBulk`
-   - run `computeSignal` + `computeSmartStops` per ticker
-   - upsert into `ml_signals` with real drop_probability, rsi, return_1m, stop_loss,
-     take_profit, source='live'
-   - **Do NOT clobber fresh Python scores** (source='py') — only write 'live' rows where
-     no fresh 'py' row exists
-   - schedule it (vercel.json cron or GitHub Action, like the other crons)
-4. **Wire `/api/screener`** to also SELECT the new ml_signals columns.
-5. **Wire Top Picks** (`screener/page.tsx`) to use real rsi/momentum_1m/stop_loss/
-   take_profit from ml_signals instead of hardcoded 50/0/0.05/0.10.
-6. **Wire Screener Buy≤/Sell@** to real ATR stops from ml_signals.
-7. Verify `npx next build`, commit, push, open draft PR.
+Remaining high-value work, roughly in priority order:
 
-Also queued by owner (after the batch pipeline):
-- Add stale-signal freshness check to auto-trade (quick, high value)
-- Niche-market idea (owner leaning toward, from my list): **insider-buying clusters
-  (SEC Form 4) + post-earnings drift (PEAD)** — both free data, plug into signal,
-  underexploited at his portfolio size. (Owner said: perfect the model first, then niche.)
+1. **VIX/volatility-regime-aware thresholds** (Medium audit finding, well-scoped):
+   `computeMarketRegime` already classifies bull/bear/neutral from SPY's 50-day MA.
+   Extend with a volatility regime (e.g. SPY's recent realized volatility vs its own
+   trailing average, or ATR-based) and widen/tighten buy thresholds + stop distances
+   in calm vs panic markets. No new data source needed — SPY chart is already fetched.
+2. **Mean-reversion/bounce detector** (Medium): a short-term oversold-bounce signal
+   (e.g. RSI<25 + positive volume divergence) as a separate factor from the existing
+   momentum-only model.
+3. **Critical items (calibration, factor-weight validation)**: these need a
+   walk-forward backtest harness comparing `dropProb` deciles to realized forward
+   returns across the universe. `lib/backtest.ts` exists per-ticker; would need to
+   be extended to run across `UNIVERSE` and aggregate — a bigger project, likely
+   worth a dedicated session/plan.
 
 ---
 
@@ -154,7 +153,7 @@ Also queued by owner (after the batch pipeline):
 | `/track-record` | `app/track-record/page.tsx` | ✅ | Public strategy vs SPY chart (forward-only, no backfill) |
 | `/suggestions` | `app/suggestions/page.tsx` | ✅ | Suggest-mode: recommended trades for user approval (no auto-exec) |
 | `/overview` | `app/(app)/overview/page.tsx` | ✅ | Dashboard — portfolio summary, ML status row, quick-start tiles |
-| `/screener` | `app/(app)/screener/page.tsx` | ⚠️ PARTIAL | Gainers/Losers/Active tabs = real. **Top Picks = FAKE** (hardcoded rsi:50, sl:0.05; Buy≤ not real entry). Fix: batch pipeline (see NEXT TASK) |
+| `/screener` | `app/(app)/screener/page.tsx` | ✅ | Gainers/Losers/Active/Top Picks all real, sourced from `ml_signals` batch pipeline; Buy≤/Sell@ use real ATR stops |
 | `/trade` | `app/(app)/trade/page.tsx` | ✅ | Manual buy/sell; "Recommended Setup" = REAL ATR stops via `api/recommend/[ticker]` |
 | `/charts` | `app/(app)/charts/page.tsx` | ✅ | OHLCV charts via Yahoo Finance v8 |
 | `/news` | `app/(app)/news/page.tsx` | ✅ | Ticker news feed via Yahoo Finance search API |
@@ -230,9 +229,9 @@ Also queued by owner (after the batch pipeline):
 | File | Purpose | Known Issues |
 |------|---------|-------------|
 | `lib/signal.ts` | `computeSignal`, `computeSmartStops`, `computeTrailingStop`, `computeRecommendation`, `computeMarketRegime`, `sizingMultiplier` | `dropProb` is a heuristic (not calibrated). Factor weights hardcoded. RSI returns 50 for <15 bars. |
-| `lib/yfinance.ts` | `getQuote`, `getQuotes` (Alpaca bulk), `getChart`, `getSparkline`, `getNews`, `daysUntilEarnings` | No batch bars endpoint yet. `getChart` = per-ticker Yahoo (rate-limit risk for bulk jobs). |
+| `lib/yfinance.ts` | `getQuote`, `getQuotes` (Alpaca bulk), `getChart`, `getBarsBulk` (Alpaca bulk bars), `getSparkline`, `getNews`, `daysUntilEarnings` | `getChart` = per-ticker Yahoo (rate-limit risk for bulk jobs); use `getBarsBulk` for batch jobs. |
 | `lib/alpaca.ts` | `alpacaBuy`, `alpacaSell`, `alpacaPositions`, `alpacaPing` | Paper-trading only |
-| `lib/db.ts` | `sql`, `initDb` (schema with idempotent ADD COLUMN) | `ml_signals` missing `stop_loss`, `take_profit`, `momentum_1m`, `source` columns (needed for batch pipeline) |
+| `lib/db.ts` | `sql`, `initDb` (schema with idempotent ADD COLUMN) | |
 | `lib/auth.ts` | `requireSession`, `requireAdmin`, `hashPassword`, `getUserSettings` | JWT_SECRET warning in production ✅ |
 | `lib/signal.ts` | See above | |
 | `lib/sentiment.ts` | Word-list headline scorer | Unvalidated; -0.4 sell threshold is a guess |
@@ -250,7 +249,7 @@ Also queued by owner (after the batch pipeline):
 | `watchlist` | Price/ML alert config per ticker |
 | `notifications` | In-app + external notification queue |
 | `alert_state` | Dedup guard for repeated alerts |
-| `ml_signals` | Signal store: drop_probability, price, rsi, return_1m, updated_at. **Missing**: stop_loss, take_profit, momentum_1m, source |
+| `ml_signals` | Signal store: drop_probability, price, rsi, return_1m, stop_loss, take_profit, momentum_1m, source ('py'\|'live'), updated_at |
 | `factor_targets` | Uploaded daily factor portfolio (JSON weights + regime + exposure) |
 | `strategy_nav` | Daily factor strategy NAV vs SPY (public track record) |
 | `nav_prices` | Last-seen close prices for NAV computation |

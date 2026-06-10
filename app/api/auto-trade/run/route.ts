@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { sql, initDb } from "@/lib/db";
 import { requireSession } from "@/lib/auth";
 import { getQuotes, getChart, daysUntilEarnings, getNews } from "@/lib/yfinance";
-import { computeSignal, computeMarketRegime, computeSmartStops, computeTrailingStop, sizingMultiplier } from "@/lib/signal";
+import { computeSignal, computeMarketRegime, computeVolRegime, computeSmartStops, computeTrailingStop, sizingMultiplier } from "@/lib/signal";
 import { scoreHeadlines } from "@/lib/sentiment";
 import { alertUser } from "@/lib/ntfy";
 import { alpacaBuy, alpacaSell } from "@/lib/alpaca";
@@ -429,11 +429,18 @@ export async function POST() {
 
   // ── Market regime: skip new buys in a bear tape ──
   let regime: "bull" | "bear" | "neutral" = "neutral";
+  let volRegime: "calm" | "normal" | "panic" = "normal";
   try {
     const spy = await getChart("SPY", "6mo");
     regime = computeMarketRegime(spy);
+    volRegime = computeVolRegime(spy);
   } catch {}
-  const regimeThreshold = regime === "bull" ? 0.35 : regime === "neutral" ? 0.28 : 0.20;
+  let regimeThreshold = regime === "bull" ? 0.35 : regime === "neutral" ? 0.28 : 0.20;
+  // Volatility overlay: demand more conviction when SPY is unusually turbulent
+  // (recent realized vol >> its own baseline), allow slightly more when calm.
+  if (volRegime === "panic") regimeThreshold -= 0.08;
+  else if (volRegime === "calm") regimeThreshold += 0.03;
+  regimeThreshold = Math.max(0.05, Math.min(0.45, regimeThreshold));
   if (regime === "bear") {
     return NextResponse.json({
       ok: true,
@@ -633,6 +640,7 @@ export async function POST() {
     bought: boughtCount,
     sold: sellOrders.length,
     regime,
+    volRegime,
     orders,
     sells: sellOrders,
     core: coreEnabled ? { ticker: coreTicker, targetPct: corePct, action: coreNote } : null,
