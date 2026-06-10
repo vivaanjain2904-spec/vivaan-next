@@ -178,15 +178,20 @@ async function runForUser(user: any, volRegime: "calm" | "normal" | "panic" = "n
   if (!scored.length) return { candidates: 0, scanned: pre.length };
 
   scored.sort((a, b) => a.dropProb - b.dropProb);
+  // Calibration: forward-return edge concentrates below dropProb 0.30; the
+  // 0.40+ region is market baseline. Don't buy "best of a bad batch" — require
+  // an absolute bar even though we rank-and-take-top-N.
+  const qualified = scored.filter(s => s.dropProb <= 0.35);
+  if (!qualified.length) return { candidates: 0, scanned: pre.length, skipped: "no_high_conviction_signals" };
   const slotsAvailable = Math.max(0, maxPositions - openCount);
-  const buyTarget = Math.min(slotsAvailable, MAX_NEW_BUYS_PER_CYCLE, scored.length);
+  const buyTarget = Math.min(slotsAvailable, MAX_NEW_BUYS_PER_CYCLE, qualified.length);
 
   const orders: any[] = [];
   let remainingCash = cashAvailable;
   const boughtSectors = new Set<string>();
 
   for (let i = 0; i < buyTarget; i++) {
-    const pick = scored[i];
+    const pick = qualified[i];
     if (remainingCash < pick.price * 1.01) break;
 
     const sector = SECTOR[pick.ticker] ?? pick.ticker;

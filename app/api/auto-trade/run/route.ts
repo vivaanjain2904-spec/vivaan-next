@@ -138,7 +138,11 @@ export async function POST() {
   const maxPositions = Number(user.max_positions) || 15;
   const maxPosPct = Number(user.max_pos_pct) || 0.08;
   const reservePct = Number(user.cash_reserve_pct) || 0.15;
-  const mlThreshold = Number(user.ml_threshold) || 0.65;
+  // Calibration (10d/21d forward returns across the universe) showed dropProb
+  // 0.60–0.70 has no predictive power for drops, and oversold names tend to
+  // BOUNCE at 1-month horizons — so ML-only auto-sells need an extreme score.
+  // Stops/targets/trailing remain the primary exits.
+  const mlThreshold = Math.max(Number(user.ml_threshold) || 0.65, 0.80);
 
   // ── Core-satellite + circuit breaker config ──
   const coreTicker = (user.core_ticker || "VOO").toUpperCase();
@@ -435,7 +439,9 @@ export async function POST() {
     regime = computeMarketRegime(spy);
     volRegime = computeVolRegime(spy);
   } catch {}
-  let regimeThreshold = regime === "bull" ? 0.35 : regime === "neutral" ? 0.28 : 0.20;
+  // Calibration: forward-return edge concentrates below dropProb 0.30
+  // (0.30–0.40 is barely above market baseline) — entry bars tightened to match.
+  let regimeThreshold = regime === "bull" ? 0.30 : regime === "neutral" ? 0.25 : 0.20;
   // Volatility overlay: demand more conviction when SPY is unusually turbulent
   // (recent realized vol >> its own baseline), allow slightly more when calm.
   if (volRegime === "panic") regimeThreshold -= 0.08;
