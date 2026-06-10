@@ -208,24 +208,29 @@ export async function POST() {
       const ageInDays = createdAt ? (Date.now() - createdAt) / 86400_000 : 0;
       if (ageInDays >= 90 && dp != null && dp >= 0.45) timeHit = true;
 
-      // News-sentiment RISK OVERLAY (sell-side only, never a buy signal).
-      // To bound API calls we only check news for BORDERLINE holdings — model
-      // already moderately risky (dp >= 0.50) but not yet a hard ML sell, and
-      // not already exiting on stop/target. Strongly negative headlines then
-      // escalate to an exit. Being wrong just means selling early.
-      let newsHit = false;
-      let newsScore: number | null = null;
+      // News-sentiment overlay — ALERT ONLY. The word-list scorer and its -0.4
+      // threshold are unvalidated (no historical headline data to calibrate
+      // against), so strongly negative news notifies the user instead of
+      // auto-selling. Stops/targets/ML remain the executable exits.
       if (!stopHit && !tgtHit && !mlHit && dp != null && dp >= 0.50) {
         try {
           const news = await getNews(p.ticker, 8);
           const s = scoreHeadlines(news.map(n => n.title));
-          if (s.n >= 3) { newsScore = s.score; if (s.score <= -0.4) newsHit = true; }
+          if (s.n >= 3) {
+            if (s.score <= -0.4) {
+              const title = `📰 ${p.ticker}: negative news on a risky position`;
+              const body = `Headline sentiment ${s.score.toFixed(2)} with drop-prob ${(dp * 100).toFixed(0)}% — review this holding (auto-sell disabled until the sentiment model is validated).`;
+              await sql`INSERT INTO notifications (user_id, ticker, kind, title, body)
+                VALUES (${user.id}, ${p.ticker}, 'news_risk', ${title}, ${body})`;
+              await alertUser(user as any, title, body);
+            }
+          }
         } catch {}
       }
 
-      if (stopHit || tgtHit || mlHit || newsHit || timeHit) {
-        const reason = stopHit ? "stop-loss" : tgtHit ? "take-profit" : mlHit ? "ml-signal" : timeHit ? "time-exit" : "negative-news";
-        const qty = timeHit && !stopHit && !tgtHit && !mlHit && !newsHit
+      if (stopHit || tgtHit || mlHit || timeHit) {
+        const reason = stopHit ? "stop-loss" : tgtHit ? "take-profit" : mlHit ? "ml-signal" : "time-exit";
+        const qty = timeHit && !stopHit && !tgtHit && !mlHit
           ? Math.max(1, Math.floor(Number(p.qty) * 0.25))
           : Number(p.qty);
         // Alpaca leg
@@ -247,7 +252,7 @@ export async function POST() {
         const proceeds = fillQty * fillPrice;
 
         // Mirror paper
-        const isPartial = (timeHit && !stopHit && !tgtHit && !mlHit && !newsHit) || fillQty < Number(p.qty);
+        const isPartial = (timeHit && !stopHit && !tgtHit && !mlHit) || fillQty < Number(p.qty);
         try {
           if (isPartial) {
             const newQty = Number(p.qty) - fillQty;
@@ -267,8 +272,7 @@ export async function POST() {
         const title = stopHit ? `🔴 Auto-sold ${p.ticker} (stop)` :
                       tgtHit ? `🟢 Auto-sold ${p.ticker} (target)` :
                       mlHit  ? `⚠️ Auto-sold ${p.ticker} (ML)` :
-                      timeHit ? `⏱️ Auto-trimmed ${p.ticker} 25% (time-exit)` :
-                               `📰 Auto-sold ${p.ticker} (negative news${newsScore != null ? ` ${newsScore.toFixed(2)}` : ""})`;
+                               `⏱️ Auto-trimmed ${p.ticker} 25% (time-exit)`;
         const body = `${fillQty} shares @ $${fillPrice.toFixed(2)} · ${reason}` +
           (alpacaOrderId ? ` · Alpaca order ${alpacaOrderId}${alpacaPending ? " (pending fill)" : ""}` : " · paper");
         await sql`INSERT INTO notifications (user_id, ticker, kind, title, body)
