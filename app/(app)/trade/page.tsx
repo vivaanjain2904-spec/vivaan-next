@@ -160,8 +160,10 @@ export default function TradePage() {
               No holdings yet — go to <button className="text-mint underline" onClick={() => setTab("buy")}>Browse & Buy</button>.
             </div>
           ) : positions.map(p => {
-            const q = quotes[p.ticker];
-            if (!q) return null;
+            // Fall back to avg_cost when no live quote exists (e.g. an
+            // untradeable/bad ticker) so the position is still visible and
+            // can be sold/cleaned up rather than disappearing silently.
+            const q = quotes[p.ticker] ?? { ticker: p.ticker, price: Number(p.avg_cost), pct: 0, hi52: Number(p.avg_cost), lo52: Number(p.avg_cost), name: "" };
             const pnl = ((q.price - p.avg_cost) / p.avg_cost) * 100;
             return (
               <PositionRow key={p.ticker} p={p} q={q} pnl={pnl}
