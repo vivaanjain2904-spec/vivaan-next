@@ -86,12 +86,26 @@ async function run(req: Request, execute: boolean) {
   let placed = 0, failed = 0;
 
   // "asset not found" is unexpected for an S&P-listed ticker — look up why.
-  async function diagnoseNotFound(ticker: string, error: string | undefined): Promise<string | undefined> {
-    if (!error || !/not found/i.test(error)) return error;
+  // Returns notFound=true when Alpaca has no asset record at all (the position
+  // can never sync and should be removed from the DB).
+  async function diagnoseNotFound(ticker: string, error: string | undefined): Promise<{ error?: string; notFound: boolean }> {
+    if (!error || !/not found/i.test(error)) return { error, notFound: false };
     const info = await alpacaAssetInfo(creds, ticker);
-    if (info.ok && !info.found) return error + ` (Alpaca has no asset record for "${ticker}" — check for a ticker rename/delisting or a typo in the position)`;
-    if (info.ok && info.found) return error + ` (asset exists on ${info.exchange}, status=${info.status}, tradable=${info.tradable} — order was rejected for a different reason)`;
-    return error;
+    if (info.ok && !info.found) return { error: error + ` (Alpaca has no asset record for "${ticker}" — removing this untradeable position from your portfolio)`, notFound: true };
+    if (info.ok && info.found) return { error: error + ` (asset exists on ${info.exchange}, status=${info.status}, tradable=${info.tradable} — order was rejected for a different reason)`, notFound: false };
+    return { error, notFound: false };
+  }
+
+  // A position Alpaca has no asset record for can never be bought/sold there —
+  // close it out in the DB at avg_cost (zero P&L) so it stops blocking sync.
+  async function removePhantomPosition(ticker: string): Promise<void> {
+    const pr = await sql`SELECT qty, avg_cost FROM positions WHERE user_id=${s.uid} AND ticker=${ticker}`;
+    const row = pr.rows[0];
+    if (!row) return;
+    const qty = Number(row.qty), avgCost = Number(row.avg_cost);
+    await sql`UPDATE users SET cash = cash + ${qty * avgCost} WHERE id=${s.uid}`;
+    await sql`DELETE FROM positions WHERE user_id=${s.uid} AND ticker=${ticker}`;
+    await sql`INSERT INTO trades (user_id, ticker, side, qty, price) VALUES (${s.uid}, ${ticker}, 'SELL', ${qty}, ${avgCost})`;
   }
 
   // Sell first to free up buying power for the buy pass.
@@ -99,7 +113,7 @@ async function run(req: Request, execute: boolean) {
     const r = await alpacaSell(creds, o.ticker, o.toSell);
     const submitted = r.ok || (!!r.orderId && !["rejected", "canceled", "expired"].includes(String(r.status)));
     if (submitted) placed++; else failed++;
-    const error = submitted ? undefined : await diagnoseNotFound(o.ticker, r.error);
+    const error = submitted ? undefined : (await diagnoseNotFound(o.ticker, r.error)).error;
     results.push({ ticker: o.ticker, side: "sell", qty: o.toSell, ok: submitted, status: r.status, filledQty: r.filledQty, orderId: r.orderId, error });
   }
 
@@ -110,8 +124,14 @@ async function run(req: Request, execute: boolean) {
     // submitted order id with a non-rejected status.
     const submitted = r.ok || (!!r.orderId && !["rejected", "canceled", "expired"].includes(String(r.status)));
     if (submitted) placed++; else failed++;
-    const error = submitted ? undefined : await diagnoseNotFound(o.ticker, r.error);
-    results.push({ ticker: o.ticker, side: "buy", qty: o.toBuy, ok: submitted, status: r.status, filledQty: r.filledQty, orderId: r.orderId, error });
+    let error: string | undefined;
+    let removed = false;
+    if (!submitted) {
+      const diag = await diagnoseNotFound(o.ticker, r.error);
+      error = diag.error;
+      if (diag.notFound) { await removePhantomPosition(o.ticker); removed = true; }
+    }
+    results.push({ ticker: o.ticker, side: "buy", qty: o.toBuy, ok: submitted, status: r.status, filledQty: r.filledQty, orderId: r.orderId, error, removed });
   }
 
   return NextResponse.json({

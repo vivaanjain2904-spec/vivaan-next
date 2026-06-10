@@ -260,8 +260,8 @@ export default function SettingsPage() {
               : syncRes.error ? `✗ ${syncRes.error}`
               : `✓ Sync complete — ${syncRes.placed ?? 0} orders placed, ${syncRes.failed ?? 0} failed (of ${syncRes.total ?? 0}). Orders fill at next market open.`}
             {Array.isArray(syncRes.results) && syncRes.results.filter((r: any) => !r.ok).map((r: any, i: number) => (
-              <div key={i} className="mt-1 text-red">
-                ✗ {r.ticker} {r.side ?? "buy"} ×{r.qty}: {r.error ?? r.status ?? "unknown error"}
+              <div key={i} className={`mt-1 ${r.removed ? "text-amber" : "text-red"}`}>
+                {r.removed ? "⚠" : "✗"} {r.ticker} {r.side ?? "buy"} ×{r.qty}: {r.error ?? r.status ?? "unknown error"}
               </div>
             ))}
           </div>
