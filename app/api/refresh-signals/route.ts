@@ -37,7 +37,19 @@ async function run(req: Request) {
     freshPy = new Set(r.rows.map((x: any) => x.ticker));
   } catch {}
 
-  const barsMap = await getBarsBulk(tickers, 90);
+  // Platform-level data keys may be unset — fall back to any user's stored
+  // Alpaca keys (the data API accepts trading keys for market data).
+  let creds: { key: string; secret: string } | undefined;
+  try {
+    const r = await sql`SELECT alpaca_key, alpaca_secret FROM users
+      WHERE alpaca_key IS NOT NULL AND alpaca_key <> ''
+        AND alpaca_secret IS NOT NULL AND alpaca_secret <> ''
+      ORDER BY id LIMIT 1`;
+    const row = r.rows[0];
+    if (row) creds = { key: row.alpaca_key, secret: row.alpaca_secret };
+  } catch {}
+
+  const barsMap = await getBarsBulk(tickers, 90, creds);
 
   let updated = 0, skipped = 0, errors = 0;
 
