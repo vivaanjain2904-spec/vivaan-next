@@ -154,6 +154,19 @@ export async function alpacaOpenBuyQty(c: Creds): Promise<{ ok: boolean; pending
   }
 }
 
+/** Look up an asset's tradability on Alpaca. Used to give a clearer error when an order is rejected as "not found". */
+export async function alpacaAssetInfo(c: Creds, symbol: string): Promise<{ ok: boolean; found: boolean; tradable?: boolean; status?: string; exchange?: string; error?: string }> {
+  try {
+    const r = await fetch(`${base(c)}/v2/assets/${encodeURIComponent(symbol)}`, { headers: headers(c) });
+    if (r.status === 404) return { ok: true, found: false };
+    const j = await r.json();
+    if (!r.ok) return { ok: false, found: false, error: j.message ?? `HTTP ${r.status}` };
+    return { ok: true, found: true, tradable: !!j.tradable, status: j.status, exchange: j.exchange };
+  } catch (e: any) {
+    return { ok: false, found: false, error: String(e?.message ?? e) };
+  }
+}
+
 /** Live broker positions, keyed by ticker → qty. Used for reconciliation. */
 export async function alpacaPositions(c: Creds): Promise<{ ok: boolean; positions?: Record<string, number>; error?: string }> {
   try {

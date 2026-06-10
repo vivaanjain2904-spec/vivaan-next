@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { sql } from "@/lib/db";
 import { requireSession, getUserSettings } from "@/lib/auth";
-import { alpacaBuy, alpacaPositions, alpacaPing, alpacaOpenBuyQty } from "@/lib/alpaca";
+import { alpacaBuy, alpacaPositions, alpacaPing, alpacaOpenBuyQty, alpacaAssetInfo } from "@/lib/alpaca";
 
 export const maxDuration = 300;
 
@@ -49,7 +49,7 @@ async function run(execute: boolean) {
 
   const plan: { ticker: string; dbQty: number; brokerQty: number; pendingQty: number; toBuy: number }[] = [];
   for (const p of posR.rows) {
-    const tk = String(p.ticker).toUpperCase();
+    const tk = String(p.ticker).trim().toUpperCase();
     const dbQty = Math.floor(Number(p.qty));
     const have = Math.floor(Number(brokerQty[tk] ?? 0)) + Math.floor(Number(pendingQty[tk] ?? 0));
     const toBuy = dbQty - have;
@@ -74,10 +74,17 @@ async function run(execute: boolean) {
     // submitted order id with a non-rejected status.
     const submitted = r.ok || (!!r.orderId && !["rejected", "canceled", "expired"].includes(String(r.status)));
     if (submitted) placed++; else failed++;
+    let error = submitted ? undefined : r.error;
+    // "asset not found" is unexpected for an S&P-listed ticker — look up why.
+    if (!submitted && error && /not found/i.test(error)) {
+      const info = await alpacaAssetInfo(creds, o.ticker);
+      if (info.ok && !info.found) error += ` (Alpaca has no asset record for "${o.ticker}" — check for a ticker rename/delisting or a typo in the position)`;
+      else if (info.ok && info.found) error += ` (asset exists on ${info.exchange}, status=${info.status}, tradable=${info.tradable} — order was rejected for a different reason)`;
+    }
     results.push({
       ticker: o.ticker, qty: o.toBuy,
       ok: submitted, status: r.status, filledQty: r.filledQty,
-      orderId: r.orderId, error: submitted ? undefined : r.error,
+      orderId: r.orderId, error,
     });
   }
 
