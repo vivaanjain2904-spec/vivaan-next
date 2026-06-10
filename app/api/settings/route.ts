@@ -20,8 +20,12 @@ export async function POST(req: Request) {
     email           = ${email ? String(email).trim().toLowerCase() : null},
     ml_alerts       = ${!!ml_alerts},
     ml_threshold    = ${Number(ml_threshold) || 0.65},
-    alpaca_key      = ${alpaca_key    ? String(alpaca_key).trim()    : null},
-    alpaca_secret   = ${alpaca_secret ? String(alpaca_secret).trim() : null},
+    alpaca_key      = ${alpaca_key ? String(alpaca_key).trim() : null},
+    alpaca_secret   = CASE
+      WHEN ${alpaca_secret !== undefined}::boolean
+        THEN ${alpaca_secret ? String(alpaca_secret).trim() : null}
+      ELSE alpaca_secret
+    END,
     alpaca_mode     = ${aMode},
     auto_trade      = ${!!auto_trade},
     smart_stops     = ${!!smart_stops},
