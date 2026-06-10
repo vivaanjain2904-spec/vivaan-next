@@ -85,12 +85,22 @@ async function run(req: Request, execute: boolean) {
   const results: any[] = [];
   let placed = 0, failed = 0;
 
+  // "asset not found" is unexpected for an S&P-listed ticker — look up why.
+  async function diagnoseNotFound(ticker: string, error: string | undefined): Promise<string | undefined> {
+    if (!error || !/not found/i.test(error)) return error;
+    const info = await alpacaAssetInfo(creds, ticker);
+    if (info.ok && !info.found) return error + ` (Alpaca has no asset record for "${ticker}" — check for a ticker rename/delisting or a typo in the position)`;
+    if (info.ok && info.found) return error + ` (asset exists on ${info.exchange}, status=${info.status}, tradable=${info.tradable} — order was rejected for a different reason)`;
+    return error;
+  }
+
   // Sell first to free up buying power for the buy pass.
   for (const o of sellPlan) {
     const r = await alpacaSell(creds, o.ticker, o.toSell);
     const submitted = r.ok || (!!r.orderId && !["rejected", "canceled", "expired"].includes(String(r.status)));
     if (submitted) placed++; else failed++;
-    results.push({ ticker: o.ticker, side: "sell", qty: o.toSell, ok: submitted, status: r.status, filledQty: r.filledQty, orderId: r.orderId, error: submitted ? undefined : r.error });
+    const error = submitted ? undefined : await diagnoseNotFound(o.ticker, r.error);
+    results.push({ ticker: o.ticker, side: "sell", qty: o.toSell, ok: submitted, status: r.status, filledQty: r.filledQty, orderId: r.orderId, error });
   }
 
   for (const o of buyPlan) {
@@ -100,13 +110,7 @@ async function run(req: Request, execute: boolean) {
     // submitted order id with a non-rejected status.
     const submitted = r.ok || (!!r.orderId && !["rejected", "canceled", "expired"].includes(String(r.status)));
     if (submitted) placed++; else failed++;
-    let error = submitted ? undefined : r.error;
-    // "asset not found" is unexpected for an S&P-listed ticker — look up why.
-    if (!submitted && error && /not found/i.test(error)) {
-      const info = await alpacaAssetInfo(creds, o.ticker);
-      if (info.ok && !info.found) error += ` (Alpaca has no asset record for "${o.ticker}" — check for a ticker rename/delisting or a typo in the position)`;
-      else if (info.ok && info.found) error += ` (asset exists on ${info.exchange}, status=${info.status}, tradable=${info.tradable} — order was rejected for a different reason)`;
-    }
+    const error = submitted ? undefined : await diagnoseNotFound(o.ticker, r.error);
     results.push({ ticker: o.ticker, side: "buy", qty: o.toBuy, ok: submitted, status: r.status, filledQty: r.filledQty, orderId: r.orderId, error });
   }
 
