@@ -200,30 +200,37 @@ async function runForUser(user: any): Promise<any> {
     const tp = pick.smart?.take_profit ?? 0.10;
 
     let alpacaOrderId: string | undefined;
+    let fillQty = qty, fillPrice = pick.price; // paper: book the planned fill
     if (user.alpaca_key && user.alpaca_secret) {
       const r = await alpacaBuy({ key: user.alpaca_key, secret: user.alpaca_secret, mode: user.alpaca_mode === "live" ? "live" : "paper" }, pick.ticker, qty);
-      if (r.ok) alpacaOrderId = r.orderId;
+      if (r.ok) {
+        alpacaOrderId = r.orderId;
+        // Mirror Alpaca's actual fill qty/price so both ledgers record the same trade.
+        if (r.filledQty) fillQty = r.filledQty;
+        if (r.filledAvgPrice) fillPrice = r.filledAvgPrice;
+      }
     }
+    const fillCost = fillQty * fillPrice;
 
     try {
       await sql`INSERT INTO positions (user_id, ticker, qty, avg_cost, stop_loss, take_profit)
-        VALUES (${user.id}, ${pick.ticker}, ${qty}, ${pick.price}, ${sl}, ${tp})
+        VALUES (${user.id}, ${pick.ticker}, ${fillQty}, ${fillPrice}, ${sl}, ${tp})
         ON CONFLICT (user_id, ticker) DO UPDATE SET
-          qty = positions.qty + ${qty},
-          avg_cost = (positions.qty * positions.avg_cost + ${cost}) / (positions.qty + ${qty})`;
-      await sql`UPDATE users SET cash = cash - ${cost} WHERE id=${user.id}`;
+          qty = positions.qty + ${fillQty},
+          avg_cost = (positions.qty * positions.avg_cost + ${fillCost}) / (positions.qty + ${fillQty})`;
+      await sql`UPDATE users SET cash = cash - ${fillCost} WHERE id=${user.id}`;
       await sql`INSERT INTO trades (user_id, ticker, side, qty, price)
-        VALUES (${user.id}, ${pick.ticker}, 'BUY', ${qty}, ${pick.price})`;
-      remainingCash -= cost;
+        VALUES (${user.id}, ${pick.ticker}, 'BUY', ${fillQty}, ${fillPrice})`;
+      remainingCash -= fillCost;
     } catch { continue; }
 
     boughtSectors.add(sector);
 
-    orders.push({ ticker: pick.ticker, qty, price: pick.price, dropProb: pick.dropProb,
+    orders.push({ ticker: pick.ticker, qty: fillQty, price: fillPrice, dropProb: pick.dropProb,
                   mode: alpacaOrderId ? "alpaca" : "paper", orderId: alpacaOrderId });
 
     const title = `🤖 Auto-discovered ${qty} ${pick.ticker}`;
-    const body = `Signal ${(pick.dropProb * 100).toFixed(0)}% drop-prob. Cost $${cost.toFixed(2)}.` +
+    const body = `Signal ${(pick.dropProb * 100).toFixed(0)}% drop-prob. Cost $${fillCost.toFixed(2)}.` +
       ` Smart stops: −${(sl*100).toFixed(1)}% / +${(tp*100).toFixed(1)}%.` +
       (alpacaOrderId ? ` Alpaca order ${alpacaOrderId}.` : "");
     await sql`INSERT INTO notifications (user_id, ticker, kind, title, body)

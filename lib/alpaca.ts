@@ -135,22 +135,37 @@ export async function alpacaPing(c: Creds): Promise<{ ok: boolean; account?: any
   }
 }
 
-/** Open (unfilled) BUY order quantity per ticker. Used to make broker sync idempotent before fills. */
-export async function alpacaOpenBuyQty(c: Creds): Promise<{ ok: boolean; pending?: Record<string, number>; error?: string }> {
+/** Open (unfilled) order quantity per ticker, split by side. Used to make broker sync idempotent before fills. */
+export async function alpacaOpenOrderQty(c: Creds): Promise<{ ok: boolean; pendingBuy?: Record<string, number>; pendingSell?: Record<string, number>; error?: string }> {
   try {
     const r = await fetch(`${base(c)}/v2/orders?status=open&limit=500`, { headers: headers(c) });
     const j = await r.json();
     if (!r.ok) return { ok: false, error: j.message ?? `HTTP ${r.status}` };
-    const pending: Record<string, number> = {};
+    const pendingBuy: Record<string, number> = {};
+    const pendingSell: Record<string, number> = {};
     for (const o of j) {
-      if (o.side !== "buy") continue;
       const sym = String(o.symbol).toUpperCase();
       const remaining = Number(o.qty ?? 0) - Number(o.filled_qty ?? 0);
-      if (remaining > 0) pending[sym] = (pending[sym] ?? 0) + remaining;
+      if (remaining <= 0) continue;
+      const target = o.side === "buy" ? pendingBuy : pendingSell;
+      target[sym] = (target[sym] ?? 0) + remaining;
     }
-    return { ok: true, pending };
+    return { ok: true, pendingBuy, pendingSell };
   } catch (e: any) {
     return { ok: false, error: String(e?.message ?? e) };
+  }
+}
+
+/** Look up an asset's tradability on Alpaca. Used to give a clearer error when an order is rejected as "not found". */
+export async function alpacaAssetInfo(c: Creds, symbol: string): Promise<{ ok: boolean; found: boolean; tradable?: boolean; status?: string; exchange?: string; error?: string }> {
+  try {
+    const r = await fetch(`${base(c)}/v2/assets/${encodeURIComponent(symbol)}`, { headers: headers(c) });
+    if (r.status === 404) return { ok: true, found: false };
+    const j = await r.json();
+    if (!r.ok) return { ok: false, found: false, error: j.message ?? `HTTP ${r.status}` };
+    return { ok: true, found: true, tradable: !!j.tradable, status: j.status, exchange: j.exchange };
+  } catch (e: any) {
+    return { ok: false, found: false, error: String(e?.message ?? e) };
   }
 }
 
