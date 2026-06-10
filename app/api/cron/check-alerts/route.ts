@@ -88,12 +88,16 @@ export async function GET(req: Request) {
 
     let filledQty = qty; // paper: assume full fill
     let fillPrice = price; // paper: book at the signal price
-    let alpacaOrderId: string | undefined, alpacaErr: string | undefined;
+    let alpacaOrderId: string | undefined, alpacaErr: string | undefined, alpacaPending = false;
     if (user.alpaca_key && user.alpaca_secret) {
       const r = await alpacaSell(
         { key: user.alpaca_key, secret: user.alpaca_secret, mode: user.alpaca_mode === "live" ? "live" : "paper" }, ticker, qty);
-      if (r.ok) {
+      // An accepted-but-unfilled order (status "new") still has a real orderId —
+      // track it so it isn't reported as paper-only when Alpaca actually has it.
+      const submitted = !!r.orderId && !["rejected", "canceled", "expired"].includes(String(r.status));
+      if (submitted) {
         alpacaOrderId = r.orderId;
+        alpacaPending = !r.ok;
         if (r.filledQty && r.filledQty < qty) filledQty = r.filledQty;
         // Mirror Alpaca's actual fill price so both ledgers record the same trade.
         if (r.filledAvgPrice) fillPrice = r.filledAvgPrice;
@@ -115,7 +119,7 @@ export async function GET(req: Request) {
         VALUES (${user.id}, ${ticker}, 'SELL', ${filledQty}, ${fillPrice})`;
     } catch {}
 
-    if (alpacaOrderId) return `🤖 Auto-sold ${filledQty} ${ticker} via Alpaca (${reason}). Order ${alpacaOrderId}`;
+    if (alpacaOrderId) return `🤖 Auto-sold ${filledQty} ${ticker} via Alpaca (${reason}). Order ${alpacaOrderId}${alpacaPending ? " (pending fill)" : ""}`;
     if (alpacaErr)     return `🤖 Paper auto-sold ${filledQty} ${ticker} (${reason}). Alpaca failed: ${alpacaErr}`;
     return `🤖 Paper auto-sold ${filledQty} ${ticker} (${reason})`;
   }
@@ -247,13 +251,17 @@ export async function GET(req: Request) {
         if (cost > cash) continue;
         if (!(await transition(user.id, w.ticker, "ml_buy", true))) continue;
 
-        let alpacaOrderId: string | undefined;
+        let alpacaOrderId: string | undefined, alpacaPending = false;
         let fillQty = qty, fillPrice = q.price; // paper: book the planned fill
         if (user.alpaca_key && user.alpaca_secret) {
           const r = await alpacaBuy(
             { key: user.alpaca_key, secret: user.alpaca_secret, mode: user.alpaca_mode === "live" ? "live" : "paper" }, w.ticker, qty);
-          if (r.ok) {
+          // An accepted-but-unfilled order (status "new") still has a real orderId —
+          // track it so it isn't reported as paper-only when Alpaca actually has it.
+          const submitted = !!r.orderId && !["rejected", "canceled", "expired"].includes(String(r.status));
+          if (submitted) {
             alpacaOrderId = r.orderId;
+            alpacaPending = !r.ok;
             // Mirror Alpaca's actual fill qty/price so both ledgers record the same trade.
             if (r.filledQty) fillQty = r.filledQty;
             if (r.filledAvgPrice) fillPrice = r.filledAvgPrice;
@@ -273,7 +281,7 @@ export async function GET(req: Request) {
         } catch {}
         const title = `🤖 Auto-bought ${qty} ${w.ticker}`;
         const body  = `ML drop-prob ${(prob*100).toFixed(0)}% — strong buy.` +
-          (alpacaOrderId ? ` Alpaca order ${alpacaOrderId}.` : " (paper-only).");
+          (alpacaOrderId ? ` Alpaca order ${alpacaOrderId}${alpacaPending ? " (pending fill)" : ""}.` : " (paper-only).");
         await sql`INSERT INTO notifications (user_id, ticker, kind, title, body)
           VALUES (${user.id}, ${w.ticker}, 'auto_buy', ${title}, ${body})`;
         await alertUser(user, title, body);

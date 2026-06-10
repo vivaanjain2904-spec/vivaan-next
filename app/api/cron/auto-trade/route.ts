@@ -199,12 +199,16 @@ async function runForUser(user: any): Promise<any> {
     const sl = pick.smart?.stop_loss ?? 0.05;
     const tp = pick.smart?.take_profit ?? 0.10;
 
-    let alpacaOrderId: string | undefined;
+    let alpacaOrderId: string | undefined, alpacaPending = false;
     let fillQty = qty, fillPrice = pick.price; // paper: book the planned fill
     if (user.alpaca_key && user.alpaca_secret) {
       const r = await alpacaBuy({ key: user.alpaca_key, secret: user.alpaca_secret, mode: user.alpaca_mode === "live" ? "live" : "paper" }, pick.ticker, qty);
-      if (r.ok) {
+      // An accepted-but-unfilled order (status "new") still has a real orderId —
+      // track it so it isn't reported as paper-only when Alpaca actually has it.
+      const submitted = !!r.orderId && !["rejected", "canceled", "expired"].includes(String(r.status));
+      if (submitted) {
         alpacaOrderId = r.orderId;
+        alpacaPending = !r.ok;
         // Mirror Alpaca's actual fill qty/price so both ledgers record the same trade.
         if (r.filledQty) fillQty = r.filledQty;
         if (r.filledAvgPrice) fillPrice = r.filledAvgPrice;
@@ -232,7 +236,7 @@ async function runForUser(user: any): Promise<any> {
     const title = `🤖 Auto-discovered ${qty} ${pick.ticker}`;
     const body = `Signal ${(pick.dropProb * 100).toFixed(0)}% drop-prob. Cost $${fillCost.toFixed(2)}.` +
       ` Smart stops: −${(sl*100).toFixed(1)}% / +${(tp*100).toFixed(1)}%.` +
-      (alpacaOrderId ? ` Alpaca order ${alpacaOrderId}.` : "");
+      (alpacaOrderId ? ` Alpaca order ${alpacaOrderId}${alpacaPending ? " (pending fill)" : ""}.` : "");
     await sql`INSERT INTO notifications (user_id, ticker, kind, title, body)
       VALUES (${user.id}, ${pick.ticker}, 'auto_discover', ${title}, ${body})`;
     await alertUser(user as any, title, body);
