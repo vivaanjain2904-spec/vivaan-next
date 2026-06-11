@@ -93,12 +93,36 @@ From deep audit of `lib/signal.ts`, `lib/backtest.ts`, `lib/yfinance.ts`, etc:
   reversal-day + volume-confirmation factor (RSI<30, today's close > prior
   close, volZ>0.5 → drop -= 0.06).
 
+**Done**
+- ~~Factor-weight validation~~ — `lib/walkforward.ts` + `GET /api/admin/walkforward`
+  runs a 730d/445-ticker/60-40 train-test grid search over the bearish/bullish
+  factor scales. Found the original (1,1) weights had ~no out-of-sample
+  calibration (test Spearman +0.086, i.e. wrong sign); `{bearish: 0.5, bullish: 1.5}`
+  generalizes (test Spearman -0.900 vs -0.829 train, correct sign — higher dropProb
+  → lower forward returns) and is now `DEFAULT_SCALES` in `lib/signal.ts`.
+
+- ~~Per-factor weight validation~~ — `lib/signal.ts` exposes
+  `computeSignalContributions` (named per-factor contributions, see
+  `FACTOR_NAMES`) and `computeSignal(..., factorWeights?)`. `GET
+  /api/admin/walkforward-factors` (`walkForwardValidatePerFactor` in
+  `lib/walkforward.ts`) does a coordinate-ascent grid search (2 passes,
+  weights ∈ {0,0.5,1,1.5,2}) over each factor's weight on top of the
+  bearish/bullish DEFAULT_SCALES.
+  **Run 2026-06-11** (730d/445 tickers/23,040 train/15,508 test samples):
+  found `{rsi: 2, ma50: 0.5}` improved train Spearman only marginally
+  (-0.829 → -0.893) but **collapsed test Spearman from -0.900 to -0.429** —
+  classic overfitting. Verdict: current per-factor weights (all 1) hold up;
+  **no change applied**. This run *re-confirms* the existing -0.900
+  out-of-sample calibration on a fresh sample — the bearish/bullish scales
+  are about as good as this coarse-grid approach can find. Further gains
+  would need a different method (e.g. regularized regression), not more
+  grid-search tweaking of these 10 factors.
+
 **Critical — NOT yet implemented**
-- `dropProb` is a **heuristic, not a calibrated probability** (starts at 0.4, arbitrary
-  point additions). Buy ≤0.35 / sell ≥0.65 thresholds are guesses. Needs decile
-  calibration against realized forward returns.
-- **Factor weights all hardcoded** (RSI ±0.22, MACD ±0.08, etc.) — never validated.
-  Needs walk-forward optimization.
+- `dropProb` is still a **heuristic, not a calibrated probability** — even
+  with the per-factor harness above, thresholds (Buy ≤0.35 / Sell ≥0.65) are
+  still guesses, not derived from a target hit-rate or expected-value
+  calculation.
 
 **Medium — NOT yet implemented**
 - `lib/sentiment.ts` is a word-list scorer, **unvalidated**; -0.4 sell threshold is a guess
@@ -122,16 +146,16 @@ From deep audit of `lib/signal.ts`, `lib/backtest.ts`, `lib/yfinance.ts`, etc:
 
 The batch signal pipeline (real Top Picks/Screener data, `getBarsBulk`,
 `refresh-signals` cron, insider/PEAD signals, stale-signal freshness check) is
-**done** — see "Done" above and the Feature Inventory below.
+**done** — see "Done" above and the Feature Inventory below. Both the
+aggregate (`/api/admin/walkforward`) and per-factor (`/api/admin/walkforward-factors`)
+walk-forward calibrations are **done and have run** — see "Done" under Model
+audit findings. The current `dropProb` weights are validated at -0.900
+out-of-sample Spearman and the per-factor search found no generalizing
+improvement (overfit on the only attempt tried).
 
 Remaining high-value work:
 
-1. **Critical items (calibration, factor-weight validation)**: need a
-   walk-forward backtest harness comparing `dropProb` deciles to realized forward
-   returns across the universe. `lib/backtest.ts` exists per-ticker; would need to
-   be extended to run across `UNIVERSE` and aggregate — a bigger project, likely
-   worth a dedicated session/plan.
-2. `lib/sentiment.ts` validation, RSI cold-start null-return, survivorship bias
+1. `lib/sentiment.ts` validation, RSI cold-start null-return, survivorship bias
    in backtests — smaller Medium items, see audit findings above.
 
 ---

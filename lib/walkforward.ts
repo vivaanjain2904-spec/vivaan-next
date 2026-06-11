@@ -15,7 +15,7 @@
  * grid search.
  */
 import type { Candle } from "./yfinance";
-import { computeSignal, type SignalScales } from "./signal";
+import { computeSignal, computeSignalContributions, FACTOR_NAMES, DEFAULT_SCALES, type SignalScales, type FactorWeights } from "./signal";
 
 export type WalkForwardResult = {
   tickers: number;
@@ -145,6 +145,129 @@ function computeSignalWithContributions(candles: Candle[]): { contributions: num
   if (bearishSum !== 0) contributions.push(bearishSum);
   if (bullishSum !== 0) contributions.push(bullishSum);
   return { contributions };
+}
+
+export type PerFactorResult = {
+  tickers: number;
+  trainSamples: number;
+  testSamples: number;
+  horizonDays: number;
+  sampleEveryDays: number;
+  trainFrac: number;
+  baselineTrainSpearman: number;
+  baselineTestSpearman: number;
+  bestWeights: FactorWeights;
+  trainSpearmanAtBest: number;
+  testSpearmanAtBest: number;
+  perFactor: { name: string; weight: number; trainSpearman: number }[];
+  verdict: string;
+};
+
+const FACTOR_WEIGHT_GRID = [0, 0.5, 1, 1.5, 2];
+
+/**
+ * Coordinate-ascent walk-forward search over per-factor weight multipliers
+ * (see FactorWeights / FACTOR_NAMES in lib/signal.ts), applied on top of the
+ * already-calibrated bearish/bullish DEFAULT_SCALES. For each factor in turn,
+ * grid-searches its weight to maximize (most negative) train Spearman while
+ * holding all other factors' weights fixed, for 2 passes. Reports how the
+ * resulting weights perform out-of-sample vs the all-1 baseline.
+ */
+export function walkForwardValidatePerFactor(
+  barsMap: Record<string, Candle[]>,
+  horizonDays = 10,
+  sampleEveryDays = 5,
+  trainFrac = 0.6,
+): PerFactorResult {
+  type Sample = { contributions: { name: string; value: number }[]; fwd: number };
+  const trainSamples: Sample[] = [];
+  const testSamples: Sample[] = [];
+  let tickersUsed = 0;
+
+  for (const candles of Object.values(barsMap)) {
+    if (!candles || candles.length < WARMUP_BARS + horizonDays + 1) continue;
+    const splitIdx = WARMUP_BARS + Math.floor((candles.length - WARMUP_BARS - horizonDays) * trainFrac);
+    let used = false;
+    for (let i = WARMUP_BARS; i < candles.length - horizonDays; i += sampleEveryDays) {
+      const contributions = computeSignalContributions(candles.slice(0, i + 1));
+      if (!contributions) continue;
+      const now = candles[i].c;
+      const later = candles[i + horizonDays].c;
+      if (!now || !later) continue;
+      (i < splitIdx ? trainSamples : testSamples).push({ contributions, fwd: ((later - now) / now) * 100 });
+      used = true;
+    }
+    if (used) tickersUsed++;
+  }
+
+  const dropFor = (s: Sample, weights: FactorWeights) => {
+    let drop = 0.4;
+    for (const { name, value } of s.contributions) {
+      const scale = value > 0 ? DEFAULT_SCALES.bearish : DEFAULT_SCALES.bullish;
+      drop += value * scale * (weights[name] ?? 1);
+    }
+    return Math.max(0, Math.min(1, drop));
+  };
+
+  const spearmanFor = (samples: Sample[], weights: FactorWeights) => {
+    if (samples.length < 30) return 0;
+    const pairs = samples.map(s => ({ drop: dropFor(s, weights), fwd: s.fwd }));
+    const buckets: { meanFwd: number }[] = [];
+    for (let b = 0; b < 10; b++) {
+      const lo = b / 10, hi = (b + 1) / 10;
+      const inB = pairs.filter(p => p.drop >= lo && (b === 9 ? p.drop <= hi : p.drop < hi));
+      if (!inB.length) continue;
+      buckets.push({ meanFwd: inB.reduce((a, c) => a + c.fwd, 0) / inB.length });
+    }
+    if (buckets.length < 3) return 0;
+    return spearmanRank(buckets.map((_, i) => i), buckets.map(b => b.meanFwd));
+  };
+
+  const allOnes: FactorWeights = {};
+  for (const name of FACTOR_NAMES) allOnes[name] = 1;
+  const baselineTrainSpearman = spearmanFor(trainSamples, allOnes);
+  const baselineTestSpearman = spearmanFor(testSamples, allOnes);
+
+  // Coordinate-ascent: 2 passes over all factors, each time picking the
+  // weight that most improves (most negative) train Spearman, holding the
+  // rest fixed at their current best.
+  const weights: FactorWeights = { ...allOnes };
+  const perFactor: { name: string; weight: number; trainSpearman: number }[] = [];
+  for (let pass = 0; pass < 2; pass++) {
+    for (const name of FACTOR_NAMES) {
+      let bestW = weights[name], bestS = spearmanFor(trainSamples, weights);
+      for (const w of FACTOR_WEIGHT_GRID) {
+        const trial = { ...weights, [name]: w };
+        const s = spearmanFor(trainSamples, trial);
+        if (s < bestS) { bestS = s; bestW = w; }
+      }
+      weights[name] = bestW;
+      if (pass === 1) perFactor.push({ name, weight: bestW, trainSpearman: Number(bestS.toFixed(3)) });
+    }
+  }
+
+  const trainSpearmanAtBest = spearmanFor(trainSamples, weights);
+  const testSpearmanAtBest = spearmanFor(testSamples, weights);
+
+  const improved = testSpearmanAtBest < baselineTestSpearman - 0.05;
+  const verdict =
+    trainSamples.length < 100 || testSamples.length < 100 ? "insufficient data — too few samples" :
+    improved ? `per-factor re-weighting helps out-of-sample (test Spearman ${testSpearmanAtBest.toFixed(3)} vs baseline ${baselineTestSpearman.toFixed(3)})` :
+    "current per-factor weights (all 1) hold up — no per-factor re-weighting found that generalizes out-of-sample";
+
+  return {
+    tickers: tickersUsed,
+    trainSamples: trainSamples.length,
+    testSamples: testSamples.length,
+    horizonDays, sampleEveryDays, trainFrac,
+    baselineTrainSpearman: Number(baselineTrainSpearman.toFixed(3)),
+    baselineTestSpearman: Number(baselineTestSpearman.toFixed(3)),
+    bestWeights: weights,
+    trainSpearmanAtBest: Number(trainSpearmanAtBest.toFixed(3)),
+    testSpearmanAtBest: Number(testSpearmanAtBest.toFixed(3)),
+    perFactor,
+    verdict,
+  };
 }
 
 function spearmanRank(a: number[], b: number[]): number {
