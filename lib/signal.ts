@@ -146,7 +146,11 @@ export function computeSignal(
     ma20Position: latest >= ma20 ? "above" : "below",
     ma50Position: latest >= ma50 ? "above" : "below",
     momentum1m,
-    recommendation: drop <= 0.35 ? "BUY" : drop >= 0.65 ? "SELL" : "HOLD",
+    // BUY cutoff 0.30 per threshold-calibration run 2026-06-11 (+1.02%/trade
+    // out-of-sample edge vs +0.36% at 0.35). SELL 0.65 is effectively inert —
+    // dropProb never exceeded 0.575 across 38k calibration samples; real exits
+    // come from ATR/trailing stops and time-exits.
+    recommendation: drop <= 0.30 ? "BUY" : drop >= 0.65 ? "SELL" : "HOLD",
   };
 }
 

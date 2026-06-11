@@ -178,10 +178,11 @@ async function runForUser(user: any, volRegime: "calm" | "normal" | "panic" = "n
   if (!scored.length) return { candidates: 0, scanned: pre.length };
 
   scored.sort((a, b) => a.dropProb - b.dropProb);
-  // Calibration: forward-return edge concentrates below dropProb 0.30; the
-  // 0.40+ region is market baseline. Don't buy "best of a bad batch" — require
-  // an absolute bar even though we rank-and-take-top-N.
-  const qualified = scored.filter(s => s.dropProb <= 0.35);
+  // Calibration (threshold-calibration run 2026-06-11): out-of-sample edge at
+  // dropProb <= 0.30 is +1.02%/trade vs +0.36% at 0.35 — the 0.30-0.35 band is
+  // near market baseline. Don't buy "best of a bad batch" — require an
+  // absolute bar even though we rank-and-take-top-N.
+  const qualified = scored.filter(s => s.dropProb <= 0.30);
   if (!qualified.length) return { candidates: 0, scanned: pre.length, skipped: "no_high_conviction_signals" };
   const slotsAvailable = Math.max(0, maxPositions - openCount);
   const buyTarget = Math.min(slotsAvailable, MAX_NEW_BUYS_PER_CYCLE, qualified.length);

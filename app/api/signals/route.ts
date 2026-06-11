@@ -43,7 +43,7 @@ export async function POST(req: Request) {
         dropProb: overrides[tk],
         rsi: 0, ma20Position: "above", ma50Position: "above",
         momentum1m: 0,
-        recommendation: overrides[tk] <= 0.35 ? "BUY" : overrides[tk] >= 0.65 ? "SELL" : "HOLD",
+        recommendation: overrides[tk] <= 0.30 ? "BUY" : overrides[tk] >= 0.65 ? "SELL" : "HOLD",
         source: "py",
       };
     }

@@ -118,11 +118,23 @@ From deep audit of `lib/signal.ts`, `lib/backtest.ts`, `lib/yfinance.ts`, etc:
   would need a different method (e.g. regularized regression), not more
   grid-search tweaking of these 10 factors.
 
-**Critical — NOT yet implemented**
-- `dropProb` is still a **heuristic, not a calibrated probability** — even
-  with the per-factor harness above, thresholds (Buy ≤0.35 / Sell ≥0.65) are
-  still guesses, not derived from a target hit-rate or expected-value
-  calculation.
+**~~Critical~~ — threshold calibration DONE (run 2026-06-11, change applied)**
+- `lib/thresholds.ts` `calibrateThresholds()` + `GET /api/admin/threshold-calibration`
+  (same params/auth as the walk-forward routes): EV scan of buy cutoffs
+  0.20–0.45 / sell 0.50–0.75 on a chronological train window with a
+  5%-coverage floor, validated on a held-out test window.
+  **Run 2026-06-11** (730d/445 tickers/23,040 train/15,508 test):
+  - **Buy 0.30 beats 0.35 out-of-sample**: +1.019% edge/trade vs +0.362%
+    (coverage 7.4% vs 27.4% — pickier, fewer trades). Generalizes (train
+    +1.263 → test +1.019). **Applied**: cron/auto-trade qualified filter
+    0.35→0.30 (auto-trade/run already used bull 0.30/neutral 0.25/bear 0.20),
+    `lib/signal.ts` recommendation BUY label 0.35→0.30, signals route override
+    label 0.35→0.30.
+  - **Sell ≥0.65 trigger is INERT**: dropProb never exceeded 0.575 across all
+    38,548 samples (the validated bearish×0.5 scale compresses the top end).
+    Lowering it would be wrong — the 0.50–0.575 band has POSITIVE forward
+    returns (oversold bounces). Exits are correctly handled by ATR/trailing
+    stops + time-exits, not the dropProb SELL label. Left at 0.65 (label only).
 
 **Medium — addressed/closed (2026-06-11)**
 - `lib/sentiment.ts` word-list scorer remains **unvalidated** (no historical
