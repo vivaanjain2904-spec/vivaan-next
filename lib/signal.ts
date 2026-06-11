@@ -26,7 +26,17 @@ export type SignalHints = {
   pead?: number | null;            // -1..+1 from lib/finnhub peadScore; positive = post-earnings drift up
 };
 
-export function computeSignal(candles: Candle[], hints?: SignalHints): Signal | null {
+/**
+ * Scale multipliers applied to the bearish (drop-increasing) and bullish
+ * (drop-decreasing) factor contributions. Defaults of 1 reproduce the
+ * original hand-tuned weights exactly — used by lib/walkforward.ts to
+ * search for better-calibrated multipliers without duplicating the factor
+ * logic.
+ */
+export type SignalScales = { bearish: number; bullish: number };
+const DEFAULT_SCALES: SignalScales = { bearish: 1, bullish: 1 };
+
+export function computeSignal(candles: Candle[], hints?: SignalHints, scales: SignalScales = DEFAULT_SCALES): Signal | null {
   if (candles.length < 26) return null;  // need >= 26 days for MACD
   const closes = candles.map(c => c.c);
   const volumes = candles.map(c => c.v ?? 0);
@@ -43,44 +53,49 @@ export function computeSignal(candles: Candle[], hints?: SignalHints): Signal | 
   const bbPos = computeBollingerPos(closes);    // -1 (lower band) to +1 (upper band)
   const volZ = computeVolumeZScore(volumes);    // recent volume z-score
 
-  // Heuristic score — original 3 factors carry 60% weight, new 3 carry 40%
-  let drop = 0.4;
+  // Each factor contributes a signed amount: positive = bearish (raises drop
+  // prob), negative = bullish (lowers it). Collected so the bearish/bullish
+  // sides can be scaled independently (see SignalScales).
+  const contributions: number[] = [];
   // RSI (existing)
-  if (rsi > 75)       drop += 0.22;
-  else if (rsi > 70)  drop += 0.13;
-  else if (rsi < 25)  drop -= 0.15;
-  else if (rsi < 35)  drop -= 0.08;
+  if (rsi > 75)       contributions.push(0.22);
+  else if (rsi > 70)  contributions.push(0.13);
+  else if (rsi < 25)  contributions.push(-0.15);
+  else if (rsi < 35)  contributions.push(-0.08);
   // MA position (existing)
-  if (latest < ma20)  drop += 0.07;
-  if (latest < ma50)  drop += 0.07;
+  if (latest < ma20)  contributions.push(0.07);
+  if (latest < ma50)  contributions.push(0.07);
   // 1m momentum (existing)
-  if (momentum1m < -10) drop += 0.10;
-  else if (momentum1m < -5) drop += 0.04;
-  else if (momentum1m > 15) drop -= 0.08;
+  if (momentum1m < -10) contributions.push(0.10);
+  else if (momentum1m < -5) contributions.push(0.04);
+  else if (momentum1m > 15) contributions.push(-0.08);
   // MACD: bearish if histogram negative AND falling
-  if (macd.hist < 0 && macd.hist < macd.histPrev) drop += 0.08;
-  else if (macd.hist > 0 && macd.hist > macd.histPrev) drop -= 0.06;
+  if (macd.hist < 0 && macd.hist < macd.histPrev) contributions.push(0.08);
+  else if (macd.hist > 0 && macd.hist > macd.histPrev) contributions.push(-0.06);
   // Bollinger: overbought near upper band, oversold near lower
-  if (bbPos > 0.9)  drop += 0.06;       // hugging upper band, mean reversion likely
-  else if (bbPos < -0.9) drop -= 0.05;  // hugging lower band, bounce likely
+  if (bbPos > 0.9)  contributions.push(0.06);       // hugging upper band, mean reversion likely
+  else if (bbPos < -0.9) contributions.push(-0.05);  // hugging lower band, bounce likely
   // Volume z-score: high vol on a down day = distribution = bearish
-  if (volZ > 2 && momentum1m < 0) drop += 0.06;
-  else if (volZ > 2 && momentum1m > 0) drop -= 0.04;  // high vol on up day = accumulation
+  if (volZ > 2 && momentum1m < 0) contributions.push(0.06);
+  else if (volZ > 2 && momentum1m > 0) contributions.push(-0.04);  // high vol on up day = accumulation
   // Mean-reversion bounce: deeply oversold AND today is already a reversal
   // (close > prior close) AND volume confirms — distinct from the
   // trend-following MACD/momentum factors, which fire on continuation.
   const reversalDay = latest > closes[closes.length - 2];
-  if (rsi < 30 && reversalDay && volZ > 0.5) drop -= 0.06;
+  if (rsi < 30 && reversalDay && volZ > 0.5) contributions.push(-0.06);
   // Insider buying signal (Form 4): cluster buying reduces drop probability
   const ibs = hints?.insiderBuyScore;
   if (ibs != null) {
-    if (ibs > 0.75)      drop -= 0.07;  // strong cluster buying
-    else if (ibs > 0.55) drop -= 0.03;  // mild net buying
-    else if (ibs < 0.25) drop += 0.04;  // net insider selling
+    if (ibs > 0.75)      contributions.push(-0.07);  // strong cluster buying
+    else if (ibs > 0.55) contributions.push(-0.03);  // mild net buying
+    else if (ibs < 0.25) contributions.push(0.04);  // net insider selling
   }
   // PEAD: post-earnings drift — beat reduces drop prob, miss raises it (decays over 60 days)
   const pead = hints?.pead;
-  if (pead != null) drop -= pead * 0.08; // max ±0.08 at full beat/miss with no decay
+  if (pead != null) contributions.push(-pead * 0.08); // max ±0.08 at full beat/miss with no decay
+
+  let drop = 0.4;
+  for (const c of contributions) drop += c * (c > 0 ? scales.bearish : scales.bullish);
   drop = Math.max(0, Math.min(1, drop));
 
   return {
