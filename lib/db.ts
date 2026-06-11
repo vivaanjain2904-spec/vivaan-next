@@ -47,6 +47,13 @@ export async function initDb() {
   try { await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS email TEXT`; } catch {}
   try { await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified BOOLEAN NOT NULL DEFAULT FALSE`; } catch {}
   try { await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verify_token TEXT`; } catch {}
+  // Grandfather pre-existing accounts: the email_verified column above defaults
+  // to FALSE for every row that already existed when it was added, locking out
+  // accounts created before the verification flow existed (they have no
+  // email_verify_token to ever verify against). Only rows that have never been
+  // through the new registration flow match this — accounts mid-verification
+  // always have a token set.
+  try { await sql`UPDATE users SET email_verified = TRUE WHERE email_verified = FALSE AND email_verify_token IS NULL`; } catch {}
   try { await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS pw_reset_token TEXT`; } catch {}
   try { await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS pw_reset_expires TIMESTAMPTZ`; } catch {}
   try { await sql`ALTER TABLE positions ADD COLUMN IF NOT EXISTS review_at TIMESTAMPTZ`; } catch {}
