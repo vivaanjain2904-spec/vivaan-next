@@ -101,12 +101,23 @@ From deep audit of `lib/signal.ts`, `lib/backtest.ts`, `lib/yfinance.ts`, etc:
   generalizes (test Spearman -0.900 vs -0.829 train, correct sign — higher dropProb
   → lower forward returns) and is now `DEFAULT_SCALES` in `lib/signal.ts`.
 
+- ~~Per-factor weight validation~~ — `lib/signal.ts` now exposes
+  `computeSignalContributions` (named per-factor contributions, see
+  `FACTOR_NAMES`) and `computeSignal(..., factorWeights?)`. `GET
+  /api/admin/walkforward-factors` (`walkForwardValidatePerFactor` in
+  `lib/walkforward.ts`) does a coordinate-ascent grid search (2 passes,
+  weights ∈ {0,0.5,1,1.5,2}) over each factor's weight on top of the
+  bearish/bullish DEFAULT_SCALES, and reports train vs test Spearman vs the
+  all-1 baseline. **Not yet run / applied** — needs a live data run (set
+  ALPACA_DATA_KEY/SECRET or admin Alpaca creds) to get real per-factor
+  weights, then wire the result into `DEFAULT_FACTOR_WEIGHTS` if it
+  generalizes out-of-sample.
+
 **Critical — NOT yet implemented**
-- `dropProb` is still a **heuristic, not a calibrated probability** — the
-  walk-forward above validated the aggregate bearish/bullish split, but the
-  individual per-factor weights (RSI ±0.22, MACD ±0.08, etc.) were not tuned
-  separately. Buy ≤0.35 / sell ≥0.65 thresholds are still guesses. A finer
-  per-factor walk-forward grid is the next step if more edge is wanted.
+- `dropProb` is still a **heuristic, not a calibrated probability** — even
+  with the per-factor harness above, thresholds (Buy ≤0.35 / Sell ≥0.65) are
+  still guesses, not derived from a target hit-rate or expected-value
+  calculation.
 
 **Medium — NOT yet implemented**
 - `lib/sentiment.ts` is a word-list scorer, **unvalidated**; -0.4 sell threshold is a guess
@@ -136,10 +147,11 @@ also **done** — see "Done" under Model audit findings.
 
 Remaining high-value work:
 
-1. **Per-factor walk-forward grid**: the existing harness only tunes the
-   aggregate bearish/bullish scale (2 params). A finer per-factor search
-   (RSI weight, MACD weight, momentum weight, etc. tuned independently) could
-   find more edge — bigger project, likely worth a dedicated session.
+1. **Run the per-factor walk-forward grid**: `GET /api/admin/walkforward-factors`
+   is built but hasn't been run against live data yet. Run it (admin session
+   or CRON_SECRET bearer), check `verdict`/`testSpearmanAtBest` vs
+   `baselineTestSpearman`, and if it generalizes, set `bestWeights` as
+   `DEFAULT_FACTOR_WEIGHTS` passed into `computeSignal` calls.
 2. `lib/sentiment.ts` validation, RSI cold-start null-return, survivorship bias
    in backtests — smaller Medium items, see audit findings above.
 

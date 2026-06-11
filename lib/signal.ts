@@ -34,6 +34,17 @@ export type SignalHints = {
  * logic.
  */
 export type SignalScales = { bearish: number; bullish: number };
+
+/**
+ * Per-factor weight multipliers (default 1 = no change), applied on top of
+ * the bearish/bullish scales. Used by lib/walkforward.ts to search for
+ * per-factor adjustments without duplicating the factor logic — see
+ * computeSignalContributions / FACTOR_NAMES below.
+ */
+export type FactorWeights = Record<string, number>;
+export const FACTOR_NAMES = [
+  "rsi", "ma20", "ma50", "momentum", "macd", "bollinger", "volume", "reversal", "insider", "pead",
+] as const;
 // Walk-forward validation (730d, 445 tickers, 60/40 train/test split) found
 // the original (1,1) weights have ~no out-of-sample calibration (test
 // Spearman +0.086), while halving the bearish-factor contributions and
@@ -41,9 +52,17 @@ export type SignalScales = { bearish: number; bullish: number };
 // -0.900, vs -0.829 on train) — i.e. the bearish factors are mostly noise
 // and the bullish factors under-weighted. See lib/walkforward.ts /
 // /api/admin/walkforward.
-const DEFAULT_SCALES: SignalScales = { bearish: 0.5, bullish: 1.5 };
+export const DEFAULT_SCALES: SignalScales = { bearish: 0.5, bullish: 1.5 };
 
-export function computeSignal(candles: Candle[], hints?: SignalHints, scales: SignalScales = DEFAULT_SCALES): Signal | null {
+/**
+ * Computes the named, unscaled per-factor contributions for a candle series.
+ * Each factor contributes a signed amount: positive = bearish (raises drop
+ * prob), negative = bullish (lowers it). Shared by computeSignal and
+ * lib/walkforward.ts so the factor logic isn't duplicated.
+ */
+export function computeSignalContributions(
+  candles: Candle[], hints?: SignalHints,
+): { name: typeof FACTOR_NAMES[number]; value: number }[] | null {
   if (candles.length < 26) return null;  // need >= 26 days for MACD
   const closes = candles.map(c => c.c);
   const volumes = candles.map(c => c.v ?? 0);
@@ -60,49 +79,65 @@ export function computeSignal(candles: Candle[], hints?: SignalHints, scales: Si
   const bbPos = computeBollingerPos(closes);    // -1 (lower band) to +1 (upper band)
   const volZ = computeVolumeZScore(volumes);    // recent volume z-score
 
-  // Each factor contributes a signed amount: positive = bearish (raises drop
-  // prob), negative = bullish (lowers it). Collected so the bearish/bullish
-  // sides can be scaled independently (see SignalScales).
-  const contributions: number[] = [];
+  const contributions: { name: typeof FACTOR_NAMES[number]; value: number }[] = [];
   // RSI (existing)
-  if (rsi > 75)       contributions.push(0.22);
-  else if (rsi > 70)  contributions.push(0.13);
-  else if (rsi < 25)  contributions.push(-0.15);
-  else if (rsi < 35)  contributions.push(-0.08);
+  if (rsi > 75)       contributions.push({ name: "rsi", value: 0.22 });
+  else if (rsi > 70)  contributions.push({ name: "rsi", value: 0.13 });
+  else if (rsi < 25)  contributions.push({ name: "rsi", value: -0.15 });
+  else if (rsi < 35)  contributions.push({ name: "rsi", value: -0.08 });
   // MA position (existing)
-  if (latest < ma20)  contributions.push(0.07);
-  if (latest < ma50)  contributions.push(0.07);
+  if (latest < ma20)  contributions.push({ name: "ma20", value: 0.07 });
+  if (latest < ma50)  contributions.push({ name: "ma50", value: 0.07 });
   // 1m momentum (existing)
-  if (momentum1m < -10) contributions.push(0.10);
-  else if (momentum1m < -5) contributions.push(0.04);
-  else if (momentum1m > 15) contributions.push(-0.08);
+  if (momentum1m < -10) contributions.push({ name: "momentum", value: 0.10 });
+  else if (momentum1m < -5) contributions.push({ name: "momentum", value: 0.04 });
+  else if (momentum1m > 15) contributions.push({ name: "momentum", value: -0.08 });
   // MACD: bearish if histogram negative AND falling
-  if (macd.hist < 0 && macd.hist < macd.histPrev) contributions.push(0.08);
-  else if (macd.hist > 0 && macd.hist > macd.histPrev) contributions.push(-0.06);
+  if (macd.hist < 0 && macd.hist < macd.histPrev) contributions.push({ name: "macd", value: 0.08 });
+  else if (macd.hist > 0 && macd.hist > macd.histPrev) contributions.push({ name: "macd", value: -0.06 });
   // Bollinger: overbought near upper band, oversold near lower
-  if (bbPos > 0.9)  contributions.push(0.06);       // hugging upper band, mean reversion likely
-  else if (bbPos < -0.9) contributions.push(-0.05);  // hugging lower band, bounce likely
+  if (bbPos > 0.9)  contributions.push({ name: "bollinger", value: 0.06 });       // hugging upper band, mean reversion likely
+  else if (bbPos < -0.9) contributions.push({ name: "bollinger", value: -0.05 });  // hugging lower band, bounce likely
   // Volume z-score: high vol on a down day = distribution = bearish
-  if (volZ > 2 && momentum1m < 0) contributions.push(0.06);
-  else if (volZ > 2 && momentum1m > 0) contributions.push(-0.04);  // high vol on up day = accumulation
+  if (volZ > 2 && momentum1m < 0) contributions.push({ name: "volume", value: 0.06 });
+  else if (volZ > 2 && momentum1m > 0) contributions.push({ name: "volume", value: -0.04 });  // high vol on up day = accumulation
   // Mean-reversion bounce: deeply oversold AND today is already a reversal
   // (close > prior close) AND volume confirms — distinct from the
   // trend-following MACD/momentum factors, which fire on continuation.
   const reversalDay = latest > closes[closes.length - 2];
-  if (rsi < 30 && reversalDay && volZ > 0.5) contributions.push(-0.06);
+  if (rsi < 30 && reversalDay && volZ > 0.5) contributions.push({ name: "reversal", value: -0.06 });
   // Insider buying signal (Form 4): cluster buying reduces drop probability
   const ibs = hints?.insiderBuyScore;
   if (ibs != null) {
-    if (ibs > 0.75)      contributions.push(-0.07);  // strong cluster buying
-    else if (ibs > 0.55) contributions.push(-0.03);  // mild net buying
-    else if (ibs < 0.25) contributions.push(0.04);  // net insider selling
+    if (ibs > 0.75)      contributions.push({ name: "insider", value: -0.07 });  // strong cluster buying
+    else if (ibs > 0.55) contributions.push({ name: "insider", value: -0.03 });  // mild net buying
+    else if (ibs < 0.25) contributions.push({ name: "insider", value: 0.04 });  // net insider selling
   }
   // PEAD: post-earnings drift — beat reduces drop prob, miss raises it (decays over 60 days)
   const pead = hints?.pead;
-  if (pead != null) contributions.push(-pead * 0.08); // max ±0.08 at full beat/miss with no decay
+  if (pead != null) contributions.push({ name: "pead", value: -pead * 0.08 }); // max ±0.08 at full beat/miss with no decay
+
+  return contributions;
+}
+
+export function computeSignal(
+  candles: Candle[], hints?: SignalHints, scales: SignalScales = DEFAULT_SCALES, factorWeights?: FactorWeights,
+): Signal | null {
+  const contributions = computeSignalContributions(candles, hints);
+  if (!contributions) return null;
+  const closes = candles.map(c => c.c);
+  const latest = closes[closes.length - 1];
+  const ma20 = avg(closes.slice(-20));
+  const ma50 = closes.length >= 50 ? avg(closes.slice(-50)) : ma20;
+  const oneMoAgo = closes[Math.max(0, closes.length - 22)];
+  const momentum1m = ((latest - oneMoAgo) / oneMoAgo) * 100;
+  const rsi = computeRSI(closes, 14);
 
   let drop = 0.4;
-  for (const c of contributions) drop += c * (c > 0 ? scales.bearish : scales.bullish);
+  for (const { name, value } of contributions) {
+    const w = factorWeights?.[name] ?? 1;
+    drop += value * (value > 0 ? scales.bearish : scales.bullish) * w;
+  }
   drop = Math.max(0, Math.min(1, drop));
 
   return {
