@@ -144,46 +144,77 @@ async function runForUser(user: any, volRegime: "calm" | "normal" | "panic" = "n
   if (cashAvailable <= 50) return { skipped: "cash_reserve_protected" };
   if (!user.auto_scan_universe) return { skipped: "scan_disabled" };
 
-  // Use curated POOL instead of full UNIVERSE — Yahoo rate-limits the
-  // bulk fetch and we get 0 candidates back. POOL is reliable.
-  const candidates = POOL.filter(t => !heldSet.has(t));
-  const quoteMap = await getQuotes(candidates);
-  const pre = candidates
-    .map(t => ({ ticker: t, q: quoteMap[t] }))
-    .filter(c => c.q && c.q.price >= 5);
-
-  // Score EVERY candidate that produces a valid signal (no threshold filter).
-  // We'll rank by dropProb and just buy the BEST 3 — guarantees the bot
-  // always acts, instead of waiting for an absolute threshold that may
-  // rarely trip in a bull market.
-  const scored: any[] = [];
-  const results = await Promise.allSettled(pre.map(async c => {
-    const candles = await withTimeout(getChart(c.ticker, "3mo"), FETCH_TIMEOUT_MS);
-    if (!candles) return null;
-    const sig = computeSignal(candles);
-    if (!sig) return null;
-    // Skip stocks where the model is bearish (drop prob > 0.55 = avoid).
-    // Demand more conviction when SPY is in a volatility-panic regime.
-    const bearishCutoff = volRegime === "panic" ? 0.40 : 0.55;
-    if (sig.dropProb > bearishCutoff) return null;
-    const smart = computeSmartStops(candles) ?? undefined;
-    const daysToER = await withTimeout(daysUntilEarnings(c.ticker), 2000);
-    if (daysToER != null && daysToER >= 0 && daysToER <= 14) return null;
-    return { ticker: c.ticker, price: c.q.price, dropProb: sig.dropProb, smart };
-  }));
-  for (const r of results) {
-    if (r.status === "fulfilled" && r.value) scored.push(r.value);
-  }
-
-  if (!scored.length) return { candidates: 0, scanned: pre.length };
-
-  scored.sort((a, b) => a.dropProb - b.dropProb);
   // Calibration (threshold-calibration run 2026-06-11): out-of-sample edge at
   // dropProb <= 0.30 is +1.02%/trade vs +0.36% at 0.35 — the 0.30-0.35 band is
-  // near market baseline. Don't buy "best of a bad batch" — require an
-  // absolute bar even though we rank-and-take-top-N.
-  const qualified = scored.filter(s => s.dropProb <= 0.30);
-  if (!qualified.length) return { candidates: 0, scanned: pre.length, skipped: "no_high_conviction_signals" };
+  // near market baseline. Demand even more conviction in a volatility panic
+  // (mirrors auto-trade/run's -0.08 panic adjustment).
+  const entryCutoff = volRegime === "panic" ? 0.22 : 0.30;
+
+  // Prefer the batch ml_signals pipeline (full ~546-ticker UNIVERSE written by
+  // /api/refresh-signals via getBarsBulk) — it already carries dropProb + ATR
+  // stops for every name, so we avoid the per-ticker Yahoo chart fetches that
+  // rate-limit. Fall back to the curated POOL live scan when batch signals are
+  // missing or stale (>24h).
+  const scored: any[] = [];
+  let scanned = 0;
+  let candidateSource = "ml_signals";
+  try {
+    const mlR = await sql`SELECT ticker, drop_probability, price, stop_loss, take_profit
+      FROM ml_signals
+      WHERE updated_at > NOW() - INTERVAL '24 hours'
+        AND drop_probability <= ${entryCutoff}
+      ORDER BY drop_probability ASC
+      LIMIT ${MAX_CANDIDATES_TO_SCORE}`;
+    const mlCands = mlR.rows.filter((r: any) => !heldSet.has(r.ticker) && Number(r.price) >= 5);
+    scanned = mlCands.length;
+    const quoteMap = await getQuotes(mlCands.map((r: any) => r.ticker));
+    const checks = await Promise.allSettled(mlCands.map(async (r: any) => {
+      // Live quote when available; the batch price can be hours old.
+      const live = quoteMap[r.ticker]?.price;
+      const price = live && live >= 5 ? live : Number(r.price);
+      const daysToER = await withTimeout(daysUntilEarnings(r.ticker), 2000);
+      if (daysToER != null && daysToER >= 0 && daysToER <= 14) return null;
+      const smart = r.stop_loss != null && r.take_profit != null
+        ? { stop_loss: Number(r.stop_loss), take_profit: Number(r.take_profit) }
+        : undefined;
+      return { ticker: r.ticker, price, dropProb: Number(r.drop_probability), smart };
+    }));
+    for (const c of checks) {
+      if (c.status === "fulfilled" && c.value) scored.push(c.value);
+    }
+  } catch {}
+
+  if (!scored.length) {
+    // Fallback: curated POOL live scan (per-ticker Yahoo charts; narrow but
+    // doesn't depend on the refresh-signals cron having run).
+    candidateSource = "pool_live";
+    const candidates = POOL.filter(t => !heldSet.has(t));
+    const quoteMap = await getQuotes(candidates);
+    const pre = candidates
+      .map(t => ({ ticker: t, q: quoteMap[t] }))
+      .filter(c => c.q && c.q.price >= 5);
+    scanned = pre.length;
+
+    const results = await Promise.allSettled(pre.map(async c => {
+      const candles = await withTimeout(getChart(c.ticker, "3mo"), FETCH_TIMEOUT_MS);
+      if (!candles) return null;
+      const sig = computeSignal(candles);
+      if (!sig) return null;
+      if (sig.dropProb > entryCutoff) return null;
+      const smart = computeSmartStops(candles) ?? undefined;
+      const daysToER = await withTimeout(daysUntilEarnings(c.ticker), 2000);
+      if (daysToER != null && daysToER >= 0 && daysToER <= 14) return null;
+      return { ticker: c.ticker, price: c.q.price, dropProb: sig.dropProb, smart };
+    }));
+    for (const r of results) {
+      if (r.status === "fulfilled" && r.value) scored.push(r.value);
+    }
+  }
+
+  if (!scored.length) return { candidates: 0, scanned, source: candidateSource, skipped: "no_high_conviction_signals" };
+
+  scored.sort((a, b) => a.dropProb - b.dropProb);
+  const qualified = scored;
   const slotsAvailable = Math.max(0, maxPositions - openCount);
   const buyTarget = Math.min(slotsAvailable, MAX_NEW_BUYS_PER_CYCLE, qualified.length);
 
@@ -252,5 +283,5 @@ async function runForUser(user: any, volRegime: "calm" | "normal" | "panic" = "n
     await alertUser(user as any, title, body);
   }
 
-  return { bought: orders.length, candidates: scored.length, orders };
+  return { bought: orders.length, candidates: scored.length, scanned, source: candidateSource, orders };
 }
