@@ -93,12 +93,20 @@ From deep audit of `lib/signal.ts`, `lib/backtest.ts`, `lib/yfinance.ts`, etc:
   reversal-day + volume-confirmation factor (RSI<30, today's close > prior
   close, volZ>0.5 → drop -= 0.06).
 
+**Done**
+- ~~Factor-weight validation~~ — `lib/walkforward.ts` + `GET /api/admin/walkforward`
+  runs a 730d/445-ticker/60-40 train-test grid search over the bearish/bullish
+  factor scales. Found the original (1,1) weights had ~no out-of-sample
+  calibration (test Spearman +0.086, i.e. wrong sign); `{bearish: 0.5, bullish: 1.5}`
+  generalizes (test Spearman -0.900 vs -0.829 train, correct sign — higher dropProb
+  → lower forward returns) and is now `DEFAULT_SCALES` in `lib/signal.ts`.
+
 **Critical — NOT yet implemented**
-- `dropProb` is a **heuristic, not a calibrated probability** (starts at 0.4, arbitrary
-  point additions). Buy ≤0.35 / sell ≥0.65 thresholds are guesses. Needs decile
-  calibration against realized forward returns.
-- **Factor weights all hardcoded** (RSI ±0.22, MACD ±0.08, etc.) — never validated.
-  Needs walk-forward optimization.
+- `dropProb` is still a **heuristic, not a calibrated probability** — the
+  walk-forward above validated the aggregate bearish/bullish split, but the
+  individual per-factor weights (RSI ±0.22, MACD ±0.08, etc.) were not tuned
+  separately. Buy ≤0.35 / sell ≥0.65 thresholds are still guesses. A finer
+  per-factor walk-forward grid is the next step if more edge is wanted.
 
 **Medium — NOT yet implemented**
 - `lib/sentiment.ts` is a word-list scorer, **unvalidated**; -0.4 sell threshold is a guess
@@ -122,15 +130,16 @@ From deep audit of `lib/signal.ts`, `lib/backtest.ts`, `lib/yfinance.ts`, etc:
 
 The batch signal pipeline (real Top Picks/Screener data, `getBarsBulk`,
 `refresh-signals` cron, insider/PEAD signals, stale-signal freshness check) is
-**done** — see "Done" above and the Feature Inventory below.
+**done** — see "Done" above and the Feature Inventory below. The walk-forward
+factor-weight calibration (`lib/walkforward.ts`, `/api/admin/walkforward`) is
+also **done** — see "Done" under Model audit findings.
 
 Remaining high-value work:
 
-1. **Critical items (calibration, factor-weight validation)**: need a
-   walk-forward backtest harness comparing `dropProb` deciles to realized forward
-   returns across the universe. `lib/backtest.ts` exists per-ticker; would need to
-   be extended to run across `UNIVERSE` and aggregate — a bigger project, likely
-   worth a dedicated session/plan.
+1. **Per-factor walk-forward grid**: the existing harness only tunes the
+   aggregate bearish/bullish scale (2 params). A finer per-factor search
+   (RSI weight, MACD weight, momentum weight, etc. tuned independently) could
+   find more edge — bigger project, likely worth a dedicated session.
 2. `lib/sentiment.ts` validation, RSI cold-start null-return, survivorship bias
    in backtests — smaller Medium items, see audit findings above.
 
