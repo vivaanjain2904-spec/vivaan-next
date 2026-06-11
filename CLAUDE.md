@@ -101,17 +101,22 @@ From deep audit of `lib/signal.ts`, `lib/backtest.ts`, `lib/yfinance.ts`, etc:
   generalizes (test Spearman -0.900 vs -0.829 train, correct sign — higher dropProb
   → lower forward returns) and is now `DEFAULT_SCALES` in `lib/signal.ts`.
 
-- ~~Per-factor weight validation~~ — `lib/signal.ts` now exposes
+- ~~Per-factor weight validation~~ — `lib/signal.ts` exposes
   `computeSignalContributions` (named per-factor contributions, see
   `FACTOR_NAMES`) and `computeSignal(..., factorWeights?)`. `GET
   /api/admin/walkforward-factors` (`walkForwardValidatePerFactor` in
   `lib/walkforward.ts`) does a coordinate-ascent grid search (2 passes,
   weights ∈ {0,0.5,1,1.5,2}) over each factor's weight on top of the
-  bearish/bullish DEFAULT_SCALES, and reports train vs test Spearman vs the
-  all-1 baseline. **Not yet run / applied** — needs a live data run (set
-  ALPACA_DATA_KEY/SECRET or admin Alpaca creds) to get real per-factor
-  weights, then wire the result into `DEFAULT_FACTOR_WEIGHTS` if it
-  generalizes out-of-sample.
+  bearish/bullish DEFAULT_SCALES.
+  **Run 2026-06-11** (730d/445 tickers/23,040 train/15,508 test samples):
+  found `{rsi: 2, ma50: 0.5}` improved train Spearman only marginally
+  (-0.829 → -0.893) but **collapsed test Spearman from -0.900 to -0.429** —
+  classic overfitting. Verdict: current per-factor weights (all 1) hold up;
+  **no change applied**. This run *re-confirms* the existing -0.900
+  out-of-sample calibration on a fresh sample — the bearish/bullish scales
+  are about as good as this coarse-grid approach can find. Further gains
+  would need a different method (e.g. regularized regression), not more
+  grid-search tweaking of these 10 factors.
 
 **Critical — NOT yet implemented**
 - `dropProb` is still a **heuristic, not a calibrated probability** — even
@@ -141,18 +146,16 @@ From deep audit of `lib/signal.ts`, `lib/backtest.ts`, `lib/yfinance.ts`, etc:
 
 The batch signal pipeline (real Top Picks/Screener data, `getBarsBulk`,
 `refresh-signals` cron, insider/PEAD signals, stale-signal freshness check) is
-**done** — see "Done" above and the Feature Inventory below. The walk-forward
-factor-weight calibration (`lib/walkforward.ts`, `/api/admin/walkforward`) is
-also **done** — see "Done" under Model audit findings.
+**done** — see "Done" above and the Feature Inventory below. Both the
+aggregate (`/api/admin/walkforward`) and per-factor (`/api/admin/walkforward-factors`)
+walk-forward calibrations are **done and have run** — see "Done" under Model
+audit findings. The current `dropProb` weights are validated at -0.900
+out-of-sample Spearman and the per-factor search found no generalizing
+improvement (overfit on the only attempt tried).
 
 Remaining high-value work:
 
-1. **Run the per-factor walk-forward grid**: `GET /api/admin/walkforward-factors`
-   is built but hasn't been run against live data yet. Run it (admin session
-   or CRON_SECRET bearer), check `verdict`/`testSpearmanAtBest` vs
-   `baselineTestSpearman`, and if it generalizes, set `bestWeights` as
-   `DEFAULT_FACTOR_WEIGHTS` passed into `computeSignal` calls.
-2. `lib/sentiment.ts` validation, RSI cold-start null-return, survivorship bias
+1. `lib/sentiment.ts` validation, RSI cold-start null-return, survivorship bias
    in backtests — smaller Medium items, see audit findings above.
 
 ---
