@@ -118,11 +118,18 @@ From deep audit of `lib/signal.ts`, `lib/backtest.ts`, `lib/yfinance.ts`, etc:
   would need a different method (e.g. regularized regression), not more
   grid-search tweaking of these 10 factors.
 
-**Critical — NOT yet implemented**
-- `dropProb` is still a **heuristic, not a calibrated probability** — even
-  with the per-factor harness above, thresholds (Buy ≤0.35 / Sell ≥0.65) are
-  still guesses, not derived from a target hit-rate or expected-value
-  calculation.
+**Critical — threshold calibration harness built (not yet run)**
+- `dropProb` thresholds (Buy ≤0.35 / Sell ≥0.65) were hand-picked, not derived
+  from data. Now built: `lib/thresholds.ts` `calibrateThresholds()` +
+  `GET /api/admin/threshold-calibration` (same params/auth as the walk-forward
+  routes). It scans buy candidates 0.20–0.45 and sell candidates 0.50–0.75 on
+  a chronological train window, maximizing expected value (edge vs.
+  unconditional mean forward return) with a 5%-coverage floor to prevent
+  tail-cherry-picking, then reports train-optimal AND current-live thresholds
+  on the held-out test window. Verdict only recommends a change if the
+  out-of-sample gain is ≥0.1% per trade. **Needs an admin run on the deployed
+  app** (like the walkforward runs); record the result here and only then
+  consider changing the live thresholds.
 
 **Medium — addressed/closed (2026-06-11)**
 - `lib/sentiment.ts` word-list scorer remains **unvalidated** (no historical
