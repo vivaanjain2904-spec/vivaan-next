@@ -34,7 +34,14 @@ export type SignalHints = {
  * logic.
  */
 export type SignalScales = { bearish: number; bullish: number };
-const DEFAULT_SCALES: SignalScales = { bearish: 1, bullish: 1 };
+// Walk-forward validation (730d, 445 tickers, 60/40 train/test split) found
+// the original (1,1) weights have ~no out-of-sample calibration (test
+// Spearman +0.086), while halving the bearish-factor contributions and
+// amplifying the bullish ones by 50% generalized strongly (test Spearman
+// -0.900, vs -0.829 on train) — i.e. the bearish factors are mostly noise
+// and the bullish factors under-weighted. See lib/walkforward.ts /
+// /api/admin/walkforward.
+const DEFAULT_SCALES: SignalScales = { bearish: 0.5, bullish: 1.5 };
 
 export function computeSignal(candles: Candle[], hints?: SignalHints, scales: SignalScales = DEFAULT_SCALES): Signal | null {
   if (candles.length < 26) return null;  // need >= 26 days for MACD
