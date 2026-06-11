@@ -282,6 +282,10 @@ export function computeRecommendation(candles: Candle[]): Recommendation | null 
   };
 }
 
+// Cold-start guard below is unreachable in practice: computeSignalContributions
+// (the only caller) requires >= 26 closes, well above period+1 (15) for the
+// default 14-day RSI. Kept as a safe default if computeRSI is ever called
+// directly with a shorter series.
 function computeRSI(closes: number[], period = 14): number {
   if (closes.length < period + 1) return 50;
   let gains = 0, losses = 0;

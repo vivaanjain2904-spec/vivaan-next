@@ -16,6 +16,7 @@
  */
 import type { Candle } from "./yfinance";
 import { computeSignal, computeSignalContributions, FACTOR_NAMES, DEFAULT_SCALES, type SignalScales, type FactorWeights } from "./signal";
+import { SURVIVORSHIP_BIAS_NOTE } from "./universe";
 
 export type WalkForwardResult = {
   tickers: number;
@@ -30,6 +31,7 @@ export type WalkForwardResult = {
   testSpearmanAtBest: number;
   testSpearmanBaseline: number;
   verdict: string;
+  caveats: string[];
 };
 
 const WARMUP_BARS = 60;
@@ -95,6 +97,7 @@ export function walkForwardValidate(
     testSpearmanAtBest: Number(testSpearmanAtBest.toFixed(3)),
     testSpearmanBaseline: Number(testSpearmanBaseline.toFixed(3)),
     verdict,
+    caveats: [SURVIVORSHIP_BIAS_NOTE],
   };
 }
 
@@ -161,6 +164,7 @@ export type PerFactorResult = {
   testSpearmanAtBest: number;
   perFactor: { name: string; weight: number; trainSpearman: number }[];
   verdict: string;
+  caveats: string[];
 };
 
 const FACTOR_WEIGHT_GRID = [0, 0.5, 1, 1.5, 2];
@@ -267,6 +271,7 @@ export function walkForwardValidatePerFactor(
     testSpearmanAtBest: Number(testSpearmanAtBest.toFixed(3)),
     perFactor,
     verdict,
+    caveats: [SURVIVORSHIP_BIAS_NOTE],
   };
 }
 

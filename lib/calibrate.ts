@@ -12,6 +12,7 @@
  */
 import type { Candle } from "./yfinance";
 import { computeSignal } from "./signal";
+import { SURVIVORSHIP_BIAS_NOTE } from "./universe";
 
 export type CalibrationBucket = {
   bucket: string;          // e.g. "0.30–0.40"
@@ -31,6 +32,7 @@ export type CalibrationResult = {
   spearman: number;        // rank correlation: bucket midpoint vs mean fwd return
   monotonic: boolean;      // does mean fwd return strictly fall as dropProb rises?
   verdict: string;
+  caveats: string[];
 };
 
 const WARMUP_BARS = 60;    // bars needed before the first signal sample
@@ -103,6 +105,7 @@ export function calibrate(
     spearman: Number(spearman.toFixed(3)),
     monotonic,
     verdict,
+    caveats: [SURVIVORSHIP_BIAS_NOTE],
   };
 }
 

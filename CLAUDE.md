@@ -124,11 +124,22 @@ From deep audit of `lib/signal.ts`, `lib/backtest.ts`, `lib/yfinance.ts`, etc:
   still guesses, not derived from a target hit-rate or expected-value
   calculation.
 
-**Medium — NOT yet implemented**
-- `lib/sentiment.ts` is a word-list scorer, **unvalidated**; -0.4 sell threshold is a guess
-- RSI cold-start returns neutral 50 for <15 bars (should return null) — low impact since
-  `computeSignal` already requires >=26 bars before calling it
-- Potential survivorship bias in any large-universe backtest (delisted names vanish)
+**Medium — addressed/closed (2026-06-11)**
+- `lib/sentiment.ts` word-list scorer remains **unvalidated** (no historical
+  headline archive to backtest against) — but it was already scoped correctly:
+  alert-only ("review this holding"), never auto-sells, comment in
+  `auto-trade/run` already says so. No marketing claim should rely on it;
+  it's a risk overlay, not part of the validated edge.
+- RSI cold-start (`computeRSI` returns 50 for <15 bars): confirmed **dead
+  code** — its only caller (`computeSignalContributions`) requires >=26 bars,
+  always above the 15-bar floor. Documented with a comment; no behavior change
+  needed.
+- Survivorship bias in `UNIVERSE`-based backtests/calibration: **can't be
+  fixed** (no delisted-ticker historical data source available), but now
+  explicitly surfaced — `lib/universe.ts` exports `SURVIVORSHIP_BIAS_NOTE`,
+  included as `caveats` in `calibrate()`, `walkForwardValidate()`, and
+  `walkForwardValidatePerFactor()` results. Anyone citing the -0.900 Spearman
+  number externally should pair it with this caveat.
 
 ## Feature-truth audit
 
