@@ -54,6 +54,6 @@ export async function DELETE(req: Request) {
   await sql`DELETE FROM positions WHERE user_id=${s.uid}`;
   await sql`DELETE FROM trades    WHERE user_id=${s.uid}`;
   await sql`DELETE FROM alert_state WHERE user_id=${s.uid}`;
-  await sql`UPDATE users SET cash=${cash} WHERE id=${s.uid}`;
+  await sql`UPDATE users SET cash=${cash}, peak_equity=${cash}, circuit_breaker_until=NULL WHERE id=${s.uid}`;
   return NextResponse.json({ ok: true });
 }
