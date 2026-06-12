@@ -23,7 +23,8 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     await sql`DELETE FROM positions    WHERE user_id=${uid}`;
     await sql`DELETE FROM trades       WHERE user_id=${uid}`;
     await sql`DELETE FROM alert_state  WHERE user_id=${uid}`;
-    await sql`UPDATE users SET cash=${Number(body.reset_cash) || 100000} WHERE id=${uid}`;
+    const resetCash = Number(body.reset_cash) || 100000;
+    await sql`UPDATE users SET cash=${resetCash}, peak_equity=${resetCash}, circuit_breaker_until=NULL WHERE id=${uid}`;
   }
   return NextResponse.json({ ok: true });
 }
