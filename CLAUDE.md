@@ -43,6 +43,28 @@ autonomous trading bot. Deployed to Vercel, live at **vaelor.dev**.
 
 ## Session history
 
+### PR #28 (open, draft) — `eb0cb2d` — circuit breaker coverage + diagnostic audit
+- **Circuit breaker cooldown** (`ef96a9e`): `circuit_breaker_until` (tripped in
+  `/api/auto-trade/run` on a drawdown breach) was only checked there. Both
+  `/api/cron/auto-trade` (daily discovery) and `/api/cron/check-alerts`
+  (watchlist ML auto-buy) now select it and skip new buys during the cooldown.
+- **Dead time-based exit fixed** (`eb0cb2d`): `positions.created_at` was never
+  persisted or selected, so the documented "trim after 90 days sideways"
+  exit in `auto-trade/run` could never fire (`ageInDays` was always 0). Added
+  the column (idempotent `ALTER TABLE` in `lib/db.ts`) and select it.
+- **Factor-rebalance circuit breaker** (`eb0cb2d`): `/api/factor-rebalance/run`
+  (the unattended factor/"Vivaan" account path) had zero drawdown protection —
+  never checked `peak_equity`/`circuit_breaker_pct`. Now tracks the
+  high-water mark, liquidates to cash + 7-day cooldown on a breach, and skips
+  rebalancing during an active cooldown — mirrors the TA breaker.
+- **Watchlist auto-buy safety rails** (`eb0cb2d`): `cron/check-alerts`'
+  ML auto-buy ignored `cash_reserve_pct`, `max_pos_pct`, and `max_positions`
+  (the other two buy paths enforce all three). Now sizes against
+  reserve-aware available cash, caps each buy at `max_pos_pct` of equity,
+  stops once `max_positions` is hit, and wraps `daysUntilEarnings` in the
+  same 2s timeout used elsewhere (was unbounded, risking the whole 60s cron
+  function on a slow Yahoo fetch).
+
 ### PR #1 (merged) — `f3cd81a` — 11 diagnostic bug fixes
 - **CRON_SECRET bypass** (cron/auto-trade, cron/check-alerts): flipped guard to
   deny-by-default when env var unset
