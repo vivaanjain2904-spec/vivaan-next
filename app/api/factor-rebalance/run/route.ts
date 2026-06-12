@@ -52,6 +52,57 @@ async function rebalanceUser(user: any, target: any) {
   const live = !!(user.alpaca_key && user.alpaca_secret);
   const creds = { key: user.alpaca_key, secret: user.alpaca_secret, mode: (user.alpaca_mode === "live" ? "live" : "paper") as "live" | "paper" };
 
+  // ── Portfolio circuit breaker — high-water mark; if equity falls more than
+  // circuit_breaker_pct below it, liquidate everything to cash and pause
+  // rebalancing for a cooldown. Mirrors the TA auto-trade breaker.
+  const breakerPct = Math.max(0, Number(user.circuit_breaker_pct) || 0);
+  const prevPeak = Number(user.peak_equity) || 0;
+  const peak = Math.max(prevPeak, equity);
+  if (peak > prevPeak) await sql`UPDATE users SET peak_equity=${peak} WHERE id=${user.id}`;
+  const breakerUntil = user.circuit_breaker_until ? new Date(user.circuit_breaker_until) : null;
+  const inCooldown = breakerUntil != null && breakerUntil.getTime() > Date.now();
+  const drawdown = peak > 0 ? (equity - peak) / peak : 0;
+
+  if (breakerPct > 0 && drawdown <= -breakerPct && !inCooldown) {
+    for (const p of positions) {
+      try {
+        const px = quotes[p.ticker]?.price;
+        if (!px) continue;
+        let qty = Number(p.qty);
+        let fillPx = px;
+        if (live) {
+          const r = await alpacaSell(creds, p.ticker, qty).catch(() => null);
+          if (!r || !r.ok || !r.filledQty) {
+            trades.push({ ticker: p.ticker, side: "SELL", qty: 0, price: px, reason: "circuit-breaker", skipped: r?.error ?? "no fill" });
+            continue;
+          }
+          qty = r.filledQty;
+          fillPx = r.filledAvgPrice ?? px;
+        }
+        const remaining = Number(p.qty) - qty;
+        if (remaining > 0.0001) await sql`UPDATE positions SET qty=${remaining} WHERE user_id=${user.id} AND ticker=${p.ticker}`;
+        else await sql`DELETE FROM positions WHERE user_id=${user.id} AND ticker=${p.ticker}`;
+        await sql`UPDATE users SET cash=cash+${qty * fillPx} WHERE id=${user.id}`;
+        await sql`INSERT INTO trades (user_id,ticker,side,qty,price) VALUES (${user.id},${p.ticker},'SELL',${qty},${fillPx})`;
+        cash += qty * fillPx;
+        trades.push({ ticker: p.ticker, side: "SELL", qty, price: fillPx, reason: "circuit-breaker" });
+      } catch (e: any) { trades.push({ ticker: p.ticker, side: "SELL", qty: 0, price: 0, reason: "circuit-breaker", skipped: `error: ${String(e?.message ?? e).slice(0,80)}` }); }
+    }
+    const cooldownDays = 7;
+    const until = new Date(Date.now() + cooldownDays * 86400_000).toISOString();
+    await sql`UPDATE users SET circuit_breaker_until=${until} WHERE id=${user.id}`;
+    const title = `🛑 Factor circuit breaker tripped (${(drawdown * 100).toFixed(1)}% drawdown)`;
+    const body = `Liquidated portfolio to cash. Rebalancing paused ${cooldownDays}d.`;
+    try {
+      await sql`INSERT INTO notifications (user_id, ticker, kind, title, body) VALUES (${user.id}, NULL, 'circuit_breaker', ${title}, ${body})`;
+      await alertUser(user as any, title, body);
+    } catch {}
+    return { user: user.name, circuitBreaker: true, drawdownPct: drawdown * 100, trades, target_as_of: target.as_of, regime: target.regime, exposure: target.exposure };
+  }
+  if (inCooldown) {
+    return { user: user.name, skipped: "circuit_breaker_cooldown", until: breakerUntil!.toISOString(), target_as_of: target.as_of };
+  }
+
   // 1) SELL anything not in the target
   for (const p of positions) {
    try {

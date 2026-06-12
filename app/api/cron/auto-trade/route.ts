@@ -85,7 +85,8 @@ export async function GET(req: Request) {
   const factorAccount = process.env.FACTOR_ACCOUNT_NAME || "Vivaan";
   const usersR = await sql`SELECT id, name, cash, autonomous_mode, auto_scan_universe,
     max_positions, max_pos_pct, cash_reserve_pct, auto_buy_size, ml_threshold,
-    alpaca_key, alpaca_secret, alpaca_mode, auto_trade, ntfy_topic, discord_webhook, email
+    alpaca_key, alpaca_secret, alpaca_mode, auto_trade, ntfy_topic, discord_webhook, email,
+    circuit_breaker_until
     FROM users WHERE autonomous_mode = TRUE AND strategy <> 'factor' AND name <> ${factorAccount}`;
 
   if (!usersR.rows.length) {
@@ -139,6 +140,12 @@ async function runForUser(user: any, volRegime: "calm" | "normal" | "panic" = "n
   const totalEquity = cash + positionValue;
   const maxDeployable = Math.max(0, totalEquity * (1 - reservePct) - positionValue);
   const cashAvailable = Math.min(cash, maxDeployable);
+
+  // Respect the portfolio circuit breaker (tripped in /api/auto-trade/run):
+  // no new buys while the post-drawdown cooldown is active.
+  const breakerUntil = user.circuit_breaker_until ? new Date(user.circuit_breaker_until) : null;
+  if (breakerUntil && breakerUntil.getTime() > Date.now())
+    return { skipped: "circuit_breaker_cooldown", until: breakerUntil.toISOString() };
 
   if (openCount >= maxPositions) return { skipped: "max_positions" };
   if (cashAvailable <= 50) return { skipped: "cash_reserve_protected" };
