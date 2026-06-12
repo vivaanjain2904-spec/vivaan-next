@@ -28,7 +28,8 @@ export async function GET(req: Request) {
   // monthly factor rebalance, not by TA stop/target/ML auto-sells.
   const factorAccount = process.env.FACTOR_ACCOUNT_NAME || "Vivaan";
   const usersR = await sql`SELECT id, name, ntfy_topic, discord_webhook, email,
-    ml_alerts, ml_threshold, alpaca_key, alpaca_secret, alpaca_mode, auto_trade, auto_buy_size
+    ml_alerts, ml_threshold, alpaca_key, alpaca_secret, alpaca_mode, auto_trade, auto_buy_size,
+    circuit_breaker_until
     FROM users WHERE strategy <> 'factor' AND name <> ${factorAccount}`;
   if (!usersR.rows.length) return NextResponse.json({ ok: true, msg: "no users" });
 
@@ -233,7 +234,12 @@ export async function GET(req: Request) {
 
     // ───── AUTO-BUY: strong bullish ML signal on watchlist ─────
     // Skip new auto-buys entirely during bear regime — don't fight the tape.
-    if (user.auto_trade && regime !== "bear") {
+    // Respect the portfolio circuit breaker: no new buys during the
+    // post-drawdown cooldown (sells/alerts above still run — risk-off only).
+    const breakerUntil = user.circuit_breaker_until ? new Date(user.circuit_breaker_until) : null;
+    const breakerActive = breakerUntil != null && breakerUntil.getTime() > Date.now();
+
+    if (user.auto_trade && regime !== "bear" && !breakerActive) {
       const cashR = await sql`SELECT cash FROM users WHERE id=${user.id}`;
       let cash = Number(cashR.rows[0]?.cash ?? 0);
       const heldSet = new Set(positions.map((p: any) => p.ticker));
