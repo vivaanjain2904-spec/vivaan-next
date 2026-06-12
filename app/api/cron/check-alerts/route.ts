@@ -7,6 +7,14 @@ import { alpacaSell, alpacaBuy } from "@/lib/alpaca";
 
 export const maxDuration = 60;
 
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T | null> {
+  return new Promise(resolve => {
+    const t = setTimeout(() => resolve(null), ms);
+    p.then(v => { clearTimeout(t); resolve(v); })
+     .catch(() => { clearTimeout(t); resolve(null); });
+  });
+}
+
 /**
  * Vercel Cron — every 5 min (see vercel.json).
  * For each user, evaluates:
@@ -27,9 +35,9 @@ export async function GET(req: Request) {
   // Exclude the factor-strategy account — its positions are managed by the
   // monthly factor rebalance, not by TA stop/target/ML auto-sells.
   const factorAccount = process.env.FACTOR_ACCOUNT_NAME || "Vivaan";
-  const usersR = await sql`SELECT id, name, ntfy_topic, discord_webhook, email,
+  const usersR = await sql`SELECT id, name, cash, ntfy_topic, discord_webhook, email,
     ml_alerts, ml_threshold, alpaca_key, alpaca_secret, alpaca_mode, auto_trade, auto_buy_size,
-    circuit_breaker_until
+    circuit_breaker_until, max_positions, max_pos_pct, cash_reserve_pct
     FROM users WHERE strategy <> 'factor' AND name <> ${factorAccount}`;
   if (!usersR.rows.length) return NextResponse.json({ ok: true, msg: "no users" });
 
@@ -240,26 +248,40 @@ export async function GET(req: Request) {
     const breakerActive = breakerUntil != null && breakerUntil.getTime() > Date.now();
 
     if (user.auto_trade && regime !== "bear" && !breakerActive) {
-      const cashR = await sql`SELECT cash FROM users WHERE id=${user.id}`;
-      let cash = Number(cashR.rows[0]?.cash ?? 0);
+      let cash = Number(user.cash);
       const heldSet = new Set(positions.map((p: any) => p.ticker));
+      let openCount = positions.length;
+      const maxPositions = Number(user.max_positions) || 15;
+      const maxPosPct = Number(user.max_pos_pct) || 0.08;
+      const reservePct = Number(user.cash_reserve_pct) || 0.15;
+
+      let positionValue = 0;
+      for (const p of positions) {
+        const px = quotes[p.ticker]?.price;
+        positionValue += Number(p.qty) * (px && px > 0 ? px : Number(p.avg_cost));
+      }
+      const totalEquity = cash + positionValue;
+      let cashAvailable = Math.max(0, Math.min(cash, totalEquity * (1 - reservePct) - positionValue));
+
       // Stricter than `1 - ml_threshold`: require high-conviction signals (< 20% drop prob)
       const buyThr = Math.min(0.20, 1 - Number(user.ml_threshold));
 
       for (const w of watch) {
+        if (openCount >= maxPositions) break;
         if (heldSet.has(w.ticker)) continue;
         const prob = ml[w.ticker];
         if (prob == null || prob > buyThr) continue;
         // Skip if earnings are within 3 days — too much gap risk
-        const daysToER = await daysUntilEarnings(w.ticker);
+        const daysToER = await withTimeout(daysUntilEarnings(w.ticker), 2000);
         if (daysToER != null && daysToER >= 0 && daysToER <= 3) continue;
         const q = quotes[w.ticker]; if (!q?.price) continue;
-        // Conviction-based sizing: stronger signal = bigger position, capped at 1.5x.
-        const buyBudget = (Number(user.auto_buy_size) || 500) * sizingMultiplier(prob);
+        // Conviction-based sizing: stronger signal = bigger position, capped at 1.5x,
+        // and capped at the per-position equity limit.
+        const buyBudget = Math.min((Number(user.auto_buy_size) || 500) * sizingMultiplier(prob), totalEquity * maxPosPct);
         const qty = Math.floor(buyBudget / q.price);
         if (qty < 1) continue;
         const cost = qty * q.price;
-        if (cost > cash) continue;
+        if (cost > cashAvailable) continue;
         if (!(await transition(user.id, w.ticker, "ml_buy", true))) continue;
 
         let alpacaOrderId: string | undefined, alpacaPending = false;
@@ -289,6 +311,9 @@ export async function GET(req: Request) {
           await sql`INSERT INTO trades (user_id, ticker, side, qty, price)
             VALUES (${user.id}, ${w.ticker}, 'BUY', ${fillQty}, ${fillPrice})`;
           cash -= fillCost;
+          cashAvailable -= fillCost;
+          openCount++;
+          heldSet.add(w.ticker);
         } catch {}
         const title = `🤖 Auto-bought ${qty} ${w.ticker}`;
         const body  = `ML drop-prob ${(prob*100).toFixed(0)}% — strong buy.` +

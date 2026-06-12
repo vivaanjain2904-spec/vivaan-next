@@ -132,7 +132,7 @@ export async function POST() {
   }
 
   // Current portfolio for safety rails
-  const pos = await sql`SELECT ticker, qty, avg_cost, stop_loss, take_profit FROM positions WHERE user_id=${user.id} AND qty > 0`;
+  const pos = await sql`SELECT ticker, qty, avg_cost, stop_loss, take_profit, created_at FROM positions WHERE user_id=${user.id} AND qty > 0`;
   let positions: any[] = pos.rows;
   let heldSet = new Set(positions.map((p: any) => p.ticker));
   const maxPositions = Number(user.max_positions) || 15;

@@ -57,6 +57,7 @@ export async function initDb() {
   try { await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS pw_reset_token TEXT`; } catch {}
   try { await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS pw_reset_expires TIMESTAMPTZ`; } catch {}
   try { await sql`ALTER TABLE positions ADD COLUMN IF NOT EXISTS review_at TIMESTAMPTZ`; } catch {}
+  try { await sql`ALTER TABLE positions ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()`; } catch {}
   // Autonomous trader settings
   try { await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS autonomous_mode BOOLEAN NOT NULL DEFAULT FALSE`; } catch {}
   try { await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS auto_scan_universe BOOLEAN NOT NULL DEFAULT FALSE`; } catch {}
@@ -80,6 +81,7 @@ export async function initDb() {
     avg_cost DOUBLE PRECISION NOT NULL,
     stop_loss   DOUBLE PRECISION,
     take_profit DOUBLE PRECISION,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     PRIMARY KEY (user_id, ticker)
   )`;
   await sql`CREATE TABLE IF NOT EXISTS trades (
